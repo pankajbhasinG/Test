@@ -1,0 +1,141 @@
+While Azure Logic Apps is more suited for handling row-by-row operations, you can use it to orchestrate a bulk insert operation to SQL Server by combining its functionality with Azure SQL Database's built-in support for bulk inserts. Here’s a step-by-step guide:
+
+### Steps to Create and Configure Azure Logic Apps for Bulk Insert
+
+#### 1. Prepare the Environment
+1. **Azure Storage Account**: Ensure you have an Azure Storage Account with the necessary table and data.
+2. **Azure SQL Database**: Ensure you have an Azure SQL Database set up and accessible.
+
+#### 2. Create a Logic App
+1. **Sign in to Azure Portal**.
+2. **Navigate to Logic Apps**:
+   - Search for "Logic Apps" and select it.
+   - Click on "Add" to create a new Logic App.
+3. **Configure Basic Settings**:
+   - Provide a name for your Logic App.
+   - Choose the subscription, resource group, and location.
+   - Click "Review + create" and then "Create".
+
+#### 3. Design the Workflow
+1. **Open the Logic App Designer**:
+   - Once the Logic App is created, open it and go to the Logic App Designer.
+
+2. **Add a Trigger**:
+   - Add a trigger to start the workflow. For instance, you can use a Recurrence trigger to run the workflow at specified intervals.
+     - Search for "Recurrence" and select it.
+     - Configure the recurrence interval (e.g., every hour).
+
+3. **Add an Azure Table Storage Connector**:
+   - Click on "New step".
+   - Search for "Azure Table Storage" and select it.
+   - Choose the "Get entities" action.
+     - Sign in to your Azure Table Storage account.
+     - Configure the action by selecting your table and setting any filter conditions if necessary.
+
+#### 4. Use a Stored Procedure for Bulk Insert
+1. **Create a Stored Procedure in SQL Server**:
+   - Write a stored procedure in your SQL Server database to handle the bulk insert operation. Here’s an example:
+
+   ```sql
+   CREATE PROCEDURE BulkInsertFromTableStorage
+   @JsonData NVARCHAR(MAX)
+   AS
+   BEGIN
+       SET NOCOUNT ON;
+
+       -- Parse the JSON data into a table variable
+       DECLARE @TempTable TABLE (
+           Column1 NVARCHAR(MAX),
+           Column2 NVARCHAR(MAX),
+           -- Add other columns as needed
+       );
+
+       INSERT INTO @TempTable (Column1, Column2)
+       SELECT
+           JSON_VALUE(value, '$.Column1'),
+           JSON_VALUE(value, '$.Column2')
+       FROM OPENJSON(@JsonData);
+
+       -- Insert data into the target table
+       INSERT INTO YourTargetTable (Column1, Column2)
+       SELECT Column1, Column2 FROM @TempTable;
+   END
+   ```
+
+2. **Add an HTTP Request to Call the Stored Procedure**:
+   - Click on "New step".
+   - Search for "HTTP" and select it.
+   - Choose the "HTTP" action to make a POST request to your SQL Server.
+
+3. **Configure the HTTP Request**:
+   - URL: Use the appropriate URL for your SQL Server.
+     - For Azure SQL Database, you can use the REST API endpoint.
+   - Method: POST
+   - Headers: Set the `Content-Type` to `application/json`.
+   - Body: Construct a JSON payload containing the data from Azure Table Storage.
+
+Here’s an example of how to structure the HTTP request:
+
+```json
+{
+    "JsonData": [
+        {
+            "Column1": "@{item().Column1}",
+            "Column2": "@{item().Column2}"
+            // Add other columns as needed
+        }
+    ]
+}
+```
+
+To use this in the Logic App Designer, you would use dynamic content and expressions to build the JSON body from the Azure Table Storage data.
+
+4. **Handle Multiple Entities**:
+   - Use the "For each" loop to iterate over the entities retrieved from Azure Table Storage if necessary, and construct the JSON array for the bulk insert.
+
+### Example Workflow
+
+Here’s a simplified visual representation of the workflow:
+
+1. **Trigger**:
+   - Recurrence (Every hour)
+
+2. **Action 1**:
+   - Get entities from Azure Table Storage
+
+3. **Action 2** (inside a "For each" loop if handling multiple entities):
+   - Construct JSON payload for bulk insert
+
+4. **Action 3**:
+   - HTTP POST to execute stored procedure for bulk insert
+
+### Detailed Configuration
+
+#### Recurrence Trigger:
+- Interval: 1
+- Frequency: Hour
+
+#### Get Entities Action:
+- Table: YourTableName
+- Filter Query: (optional)
+
+#### HTTP POST Action:
+- URL: `https://your-sql-server.database.windows.net/api/executeProcedure`
+- Method: POST
+- Headers:
+  - `Content-Type: application/json`
+- Body:
+
+```json
+{
+    "JsonData": [
+        {
+            "Column1": "@{item().Column1}",
+            "Column2": "@{item().Column2}"
+            // Add other columns as needed
+        }
+    ]
+}
+```
+
+By following these steps, you can use Azure Logic Apps to automate the process of bulk inserting data from Azure Table Storage into SQL Server using a stored procedure. This approach leverages the strengths of both Logic Apps for orchestration and SQL Server for efficient data handling.
