@@ -1,0 +1,87 @@
+Deleting data in Azure Table Storage from SQL Server directly is not possible as they are different types of storage services. However, you can achieve this using a combination of Azure services and tools, such as Azure Functions or a custom application that uses Azure SDKs.High-Level Steps to Delete Data in Azure Table Storage from SQL Server:Extract Data from SQL Server: Identify the rows in your SQL Server that correspond to the entities you want to delete in Azure Table Storage.Invoke an Azure Function: Use an Azure Function to delete the entities in Azure Table Storage.Run the Process: Trigger this process from your SQL Server environment.Here is a detailed guide:Step 1: Extract Data from SQL ServerYou will need a way to identify which rows or data points in SQL Server need to be deleted in Azure Table Storage. For example:SELECT PartitionKey, RowKey
+FROM YourSqlServerTable
+WHERE SomeCondition = 'Value';Step 2: Create an Azure Function to Delete EntitiesCreate a New Azure Function:Go to the Azure Portal.Navigate to Create a resource > Function App.Fill in the required details and create a new function app.Write the Function to Delete Entities:In the function app, create a new function. Choose a trigger (HTTP trigger is common for this purpose).Use the Azure Table Storage SDK to delete entities. Here’s an example in C#:using System.IO;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Azure.WebJobs;
+using Microsoft.Azure.WebJobs.Extensions.Http;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
+using Microsoft.WindowsAzure.Storage;
+using Microsoft.WindowsAzure.Storage.Table;
+using System.Threading.Tasks;
+
+public static class DeleteEntityFunction
+{
+    [FunctionName("DeleteEntityFunction")]
+    public static async Task<IActionResult> Run(
+        [HttpTrigger(AuthorizationLevel.Function, "post", Route = null)] HttpRequest req,
+        ILogger log)
+    {
+        log.LogInformation("C# HTTP trigger function processed a request.");
+
+        string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
+        dynamic data = JsonConvert.DeserializeObject(requestBody);
+        string partitionKey = data?.PartitionKey;
+        string rowKey = data?.RowKey;
+
+        if (string.IsNullOrEmpty(partitionKey) || string.IsNullOrEmpty(rowKey))
+        {
+            return new BadRequestObjectResult("Please pass PartitionKey and RowKey in the request body");
+        }
+
+        string storageConnectionString = Environment.GetEnvironmentVariable("AzureWebJobsStorage");
+        CloudStorageAccount storageAccount = CloudStorageAccount.Parse(storageConnectionString);
+        CloudTableClient tableClient = storageAccount.CreateCloudTableClient();
+        CloudTable table = tableClient.GetTableReference("YourTableName");
+
+        TableOperation retrieveOperation = TableOperation.Retrieve(partitionKey, rowKey);
+        TableResult retrievedResult = await table.ExecuteAsync(retrieveOperation);
+        DynamicTableEntity deleteEntity = (DynamicTableEntity)retrievedResult.Result;
+
+        if (deleteEntity != null)
+        {
+            TableOperation deleteOperation = TableOperation.Delete(deleteEntity);
+            await table.ExecuteAsync(deleteOperation);
+            return new OkResult();
+        }
+        else
+        {
+            return new NotFoundResult();
+        }
+    }
+}Step 3: Call the Azure Function from SQL ServerYou can use SQL Server to call the Azure Function via an HTTP request. One way to do this is by using SQLCLR (SQL Common Language Runtime) or a stored procedure that makes an HTTP request.Example of a stored procedure using SQLCLR:Enable CLR:sp_configure 'clr enabled', 1;
+RECONFIGURE;Create the CLR Procedure: Write a CLR stored procedure in C# that calls the Azure Function. Deploy this CLR stored procedure to SQL Server.Here’s an example of the C# code for the CLR procedure:using System;
+using System.Data.SqlTypes;
+using System.Net.Http;
+using Microsoft.SqlServer.Server;
+using System.Threading.Tasks;
+
+public class HttpClientCLR
+{
+    [SqlProcedure]
+    public static void DeleteFromAzureTable(SqlString partitionKey, SqlString rowKey)
+    {
+        Task.Run(async () => await CallAzureFunction(partitionKey.Value, rowKey.Value)).Wait();
+    }
+
+    private static async Task CallAzureFunction(string partitionKey, string rowKey)
+    {
+        using (HttpClient client = new HttpClient())
+        {
+            var requestBody = new
+            {
+                PartitionKey = partitionKey,
+                RowKey = rowKey
+            };
+            string json = JsonConvert.SerializeObject(requestBody);
+            StringContent content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+
+            HttpResponseMessage response = await client.PostAsync("https://yourfunctionappname.azurewebsites.net/api/DeleteEntityFunction?code=yourfunctionkey", content);
+            response.EnsureSuccessStatusCode();
+        }
+    }
+}Deploy and Use the CLR Procedure:CREATE PROCEDURE dbo.DeleteFromAzureTable
+@PartitionKey NVARCHAR(255),
+@RowKey NVARCHAR(255)
+AS EXTERNAL NAME [YourAssembly].[YourNamespace.HttpClientCLR].[DeleteFromAzureTable];Call the procedure from SQL Server:EXEC dbo.DeleteFromAzureTable 'partitionKeyValue', 'rowKeyValue';SummaryExtract Data: Determine the rows in SQL Server that need to be deleted in Azure Table Storage.Azure Function: Implement an Azure Function to handle the deletion from Azure Table Storage.Invoke from SQL Server: Use SQLCLR or another method to call the Azure Function from SQL Server.By following these steps, you can effectively delete entities from Azure Table Storage based on data in SQL Server.
