@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Capitalize First Letter of Table Column Text</title>
+</head>
+<body>
+
+<table id="myTable" border="1">
+  <tr>
+    <td>apple</td>
+    <td>Banana</td>
+  </tr>
+  <tr>
+    <td>cherry</td>
+    <td>Date</td>
+  </tr>
+  <tr>
+    <td>elderberry</td>
+    <td>Fig</td>
+  </tr>
+</table>
+
+<script>
+function capitalizeFirstLetterOfColumn(tableId, columnIndex) {
+  // Get the table element by ID
+  var table = document.getElementById(tableId);
+
+  // Loop through each row in the table
+  for (var i = 0, row; row = table.rows[i]; i++) {
+    // Get the cell in the specified column
+    var cell = row.cells[columnIndex];
+
+    // Get the cell text
+    var text = cell.innerText;
+
+    // Capitalize the first letter of the text
+    var capitalizedText = text.charAt(0).toUpperCase() + text.slice(1);
+
+    // Set the cell text to the capitalized text
+    cell.innerText = capitalizedText;
+  }
+}
+
+// Capitalize the first letter of the first column
+capitalizeFirstLetterOfColumn('myTable', 0);
+</script>
+
+</body>
+</html>
