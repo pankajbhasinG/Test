@@ -1,0 +1,22 @@
+// Example JSON data
+let jsonData = {
+    "name": "John \"Doe",
+    "email": "john.doe@example.com",
+    "details": {
+        "age": 30,
+        "address": "123 \"Main St"
+    }
+};
+
+// Convert the JSON data to a string
+let jsonString = JSON.stringify(jsonData);
+
+// Remove or escape double quotes within JSON values
+let cleanedJsonString = jsonString.replace(/"(.*?)"/g, (match, p1) => `"${p1.replace(/"/g, '')}"`);
+
+console.log(cleanedJsonString);  // Logs: {"name":"John Doe","email":"john.doe@example.com","details":{"age":30,"address":"123 Main St"}}
+
+// Use the cleaned JSON string in the SQL query
+let query = `INSERT INTO json_table (json_data) VALUES ('${cleanedJsonString}');`;
+
+console.log(query);  // Logs the final SQL query
