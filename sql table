@@ -1,0 +1,52 @@
+CREATE PROCEDURE InsertLargeJsonData
+    @JsonData NVARCHAR(MAX)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    -- Create a temporary table
+    CREATE TABLE #JsonChunks (
+        Id INT IDENTITY(1,1) PRIMARY KEY,
+        JsonChunk NVARCHAR(MAX)
+    );
+
+    -- Variable to store the current position in the JSON data
+    DECLARE @Start INT = 1;
+    DECLARE @ChunkSize INT = 4000; -- Adjust chunk size based on your needs
+    DECLARE @JsonChunk NVARCHAR(MAX);
+
+    -- Loop to insert JSON data in chunks
+    WHILE @Start <= LEN(@JsonData)
+    BEGIN
+        -- Extract a chunk of JSON data
+        SET @JsonChunk = SUBSTRING(@JsonData, @Start, @ChunkSize);
+
+        -- Insert the chunk into the temporary table
+        INSERT INTO #JsonChunks (JsonChunk)
+        VALUES (@JsonChunk);
+
+        -- Move to the next chunk
+        SET @Start = @Start + @ChunkSize;
+    END;
+
+    -- Insert the concatenated JSON chunks into the final table
+    INSERT INTO MyTable (JsonColumn)
+    SELECT STRING_AGG(JsonChunk, '') WITHIN GROUP (ORDER BY Id)
+    FROM #JsonChunks;
+
+    -- Drop the temporary table
+    DROP TABLE #JsonChunks;
+END;
+
+
+
+using (SqlConnection connection = new SqlConnection(connectionString))
+{
+    connection.Open();
+    using (SqlCommand cmd = new SqlCommand("InsertLargeJsonData", connection))
+    {
+        cmd.CommandType = CommandType.StoredProcedure;
+        cmd.Parameters.Add(new SqlParameter("@JsonData", SqlDbType.NVarChar, -1) { Value = largeJsonString });
+        cmd.ExecuteNonQuery();
+    }
+}
