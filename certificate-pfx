@@ -1,1 +1,29 @@
 
+using System.Security.Cryptography.X509Certificates;
+
+public static class Function
+{
+    [FunctionName("Function")]
+    public static void Run([TimerTrigger("0 */5 * * * *")] TimerInfo myTimer, ILogger log)
+    {
+        var thumbprint = Environment.GetEnvironmentVariable("MyCertThumbprint");
+        var certificate = GetCertificateByThumbprint(thumbprint);
+
+        // Use the certificate as needed
+    }
+
+    private static X509Certificate2 GetCertificateByThumbprint(string thumbprint)
+    {
+        var store = new X509Store(StoreName.My, StoreLocation.CurrentUser);
+        store.Open(OpenFlags.ReadOnly);
+        var certificates = store.Certificates.Find(X509FindType.FindByThumbprint, thumbprint, false);
+        store.Close();
+
+        if (certificates.Count > 0)
+        {
+            return certificates[0];
+        }
+
+        throw new Exception("Certificate not found");
+    }
+}
