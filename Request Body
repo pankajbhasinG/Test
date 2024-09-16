@@ -1,0 +1,64 @@
+In Azure Functions (C#), you can log the request body using the ILogger interface, which is provided in the function’s method signature. Here's how you can read and log the request body for an HTTP-triggered function.
+
+Example: Logging the Request Body in C#
+
+using System.IO;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Azure.WebJobs;
+using Microsoft.Azure.WebJobs.Extensions.Http;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
+
+public static class LogRequestBodyFunction
+{
+    [FunctionName("LogRequestBodyFunction")]
+    public static async Task<IActionResult> Run(
+        [HttpTrigger(AuthorizationLevel.Function, "post", Route = null)] HttpRequest req,
+        ILogger log)
+    {
+        // Read the request body as a string
+        string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
+        
+        // Log the request body
+        log.LogInformation("Request Body: " + requestBody);
+
+        // Return a response (optional)
+        return new OkObjectResult($"Request body logged: {requestBody}");
+    }
+}
+
+Steps in the Code:
+
+1. Reading the Request Body:
+
+The req.Body provides the request body as a stream.
+
+The StreamReader reads the body, and ReadToEndAsync allows for reading it asynchronously to avoid blocking operations.
+
+
+
+2. Logging the Request Body:
+
+The log.LogInformation method logs the content of the request body.
+
+You can change the logging level to LogWarning, LogError, etc., depending on your needs.
+
+
+
+3. Response:
+
+The function returns an OkObjectResult, which is an HTTP 200 response with the logged request body as a message.
+
+
+
+
+Notes:
+
+Logging Sensitive Data: Be cautious when logging request bodies, especially if they contain sensitive information like passwords, credit card numbers, etc. Ensure compliance with security practices.
+
+Async Handling: Reading the body asynchronously ensures that the function scales well, particularly under high load.
+
+
+This method logs the entire request body, so it’s useful for debugging or monitoring incoming requests to your Azure Function.
+
