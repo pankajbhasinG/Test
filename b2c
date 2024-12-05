@@ -1,0 +1,220 @@
+Here’s a step-by-step walkthrough to set up Azure AD B2C for securing a Web API and calling it via Postman.
+
+
+---
+
+Step 1: Set Up Azure AD B2C Tenant
+
+If you don't already have an Azure AD B2C tenant:
+
+1. In the Azure Portal, search for Azure AD B2C and click Create a B2C Tenant.
+
+
+2. Follow the instructions to create a tenant and link it to your Azure subscription.
+
+
+
+
+---
+
+Step 2: Register Applications
+
+a. Register the API Application
+
+This represents your Web API.
+
+1. Navigate to Azure AD B2C > App Registrations and click New Registration.
+
+
+2. Enter the following:
+
+Name: MyWebAPI.
+
+Supported Account Types: Choose Accounts in any identity provider or organizational directory.
+
+Redirect URI: Leave it blank for now.
+
+
+
+3. Click Register.
+
+
+4. After registration, note the Application (Client) ID.
+
+
+5. Configure API permissions:
+
+Go to Expose an API and click Set to define the Application ID URI (e.g., https://<tenant_name>.onmicrosoft.com/MyWebAPI).
+
+Click Add a Scope and configure:
+
+Scope Name: api.read.
+
+Admin Consent Display Name: Access Web API.
+
+Admin Consent Description: Allows access to the Web API.
+
+Leave State as Enabled.
+
+Click Add Scope.
+
+
+
+
+
+
+---
+
+b. Register the Client Application
+
+This represents Postman or any other client accessing your API.
+
+1. Go to Azure AD B2C > App Registrations and click New Registration.
+
+
+2. Enter the following:
+
+Name: PostmanClient.
+
+Supported Account Types: Choose Accounts in any identity provider or organizational directory.
+
+Redirect URI: Add http://localhost.
+
+
+
+3. Click Register.
+
+
+4. Note the Application (Client) ID.
+
+
+5. Configure authentication:
+
+Go to Authentication and:
+
+Enable Public client/native.
+
+Save changes.
+
+
+
+
+
+
+---
+
+Step 3: Create a User Flow or Custom Policy
+
+User flows define how users authenticate in Azure AD B2C.
+
+1. Go to Azure AD B2C > User Flows and click New User Flow.
+
+
+2. Select a flow type:
+
+For testing, select Sign up and sign in (recommended for simplicity).
+
+
+
+3. Configure the flow:
+
+Name: B2C_1_SignUpSignIn.
+
+Under Identity providers, ensure Email signup is enabled.
+
+
+
+4. Click Create.
+
+
+
+
+---
+
+Step 4: Test the User Flow
+
+1. Navigate to User Flows and click on B2C_1_SignUpSignIn.
+
+
+2. Click Run User Flow and select the PostmanClient application.
+
+
+3. Enter the Redirect URI as http://localhost.
+
+
+4. Click Run. This will take you to the authentication page. Complete sign-up/sign-in to test.
+
+
+
+
+---
+
+Step 5: Configure Postman
+
+To call the API, set up Postman to fetch the token and make the request.
+
+a. Fetch Token in Postman
+
+1. Open Postman and create a new request.
+
+
+2. Go to the Authorization tab and select OAuth 2.0.
+
+
+3. Click Get New Access Token and fill in:
+
+Token Name: AzureB2CToken.
+
+Grant Type: Authorization Code.
+
+Auth URL: https://<tenant_name>.b2clogin.com/<tenant_name>.onmicrosoft.com/B2C_1_SignUpSignIn/oauth2/v2.0/authorize.
+
+Access Token URL: https://<tenant_name>.b2clogin.com/<tenant_name>.onmicrosoft.com/B2C_1_SignUpSignIn/oauth2/v2.0/token.
+
+Client ID: Application (Client) ID of PostmanClient.
+
+Scope: Use the scope defined earlier (e.g., https://<tenant_name>.onmicrosoft.com/MyWebAPI/api.read).
+
+Redirect URI: http://localhost.
+
+
+
+4. Click Get Token. You’ll be redirected to the sign-in page.
+
+
+
+
+---
+
+b. Call the API
+
+1. In Postman, create a new request.
+
+
+2. Set the method (e.g., GET or POST) and API endpoint.
+
+
+3. Under Authorization, select Bearer Token and paste the access token retrieved earlier.
+
+
+4. Send the request.
+
+
+
+
+---
+
+Step 6: Validate and Debug
+
+Use jwt.ms to decode and validate your access token.
+
+Ensure the aud (audience) claim matches your API’s Application ID URI.
+
+Check API logs for errors if the request fails.
+
+
+
+---
+
+Let me know if you need help implementing any specific part!
+
