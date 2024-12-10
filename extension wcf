@@ -1,0 +1,92 @@
+If you're unable to find the WCF Connected Services extension in Visual Studio, follow these troubleshooting steps:
+
+
+---
+
+1. Verify Visual Studio Version
+
+Ensure you are using a supported version of Visual Studio. WCF Connected Services works with Visual Studio 2019 and later.
+
+To check your Visual Studio version:
+
+Open Visual Studio.
+
+Go to Help > About Microsoft Visual Studio.
+
+
+
+If you're using an older version, update to the latest version of Visual Studio.
+
+
+---
+
+2. Enable Extensions in Visual Studio
+
+Ensure extensions are enabled in Visual Studio:
+
+1. Go to Tools > Options > Environment > Extensions and Updates.
+
+
+2. Verify that extensions are allowed to be installed.
+
+
+
+
+---
+
+3. Install the WCF Connected Services Extension Manually
+
+If the extension isn't appearing in Visual Studio's Manage Extensions, install it directly from the Visual Studio Marketplace:
+
+1. Visit the WCF Connected Services Marketplace page.
+
+
+2. Download the extension (.vsix file).
+
+
+3. Run the downloaded file to install it into Visual Studio.
+
+
+
+
+---
+
+4. Manually Add the WCF Service Reference
+
+If the extension is unavailable, you can manually add a WCF service reference:
+
+1. Generate the Proxy Class: Use the svcutil tool to generate a proxy class from the WCF service's WSDL.
+
+svcutil.exe http://example.com/MyService.svc?wsdl /out:MyServiceProxy.cs
+
+Replace the URL with your WCF service's WSDL URL.
+
+
+2. Add the Generated Proxy Class:
+
+Add the generated MyServiceProxy.cs file to your project.
+
+
+
+3. Install Required NuGet Packages: Install the following packages in your project:
+
+dotnet add package System.ServiceModel.Primitives
+dotnet add package System.ServiceModel.Http
+
+
+4. Use the Proxy Class: Instantiate the generated proxy class in your code and call the WCF service.
+
+
+
+
+---
+
+5. Use Visual Studio Code
+
+If you're using Visual Studio Code, you can still consume the WCF service by generating the proxy class as described above and adding it to your .NET Core project.
+
+
+---
+
+If none of these solutions work, let me know so I can help you further!
+
