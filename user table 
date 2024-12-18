@@ -1,0 +1,111 @@
+To create a user table in your database that matches the Azure AD B2C (ADB2C) schema, you need to account for the fields that ADB2C typically manages for users. Here’s a guide:
+
+
+---
+
+1. Identify Required Fields
+
+Azure AD B2C stores user information such as:
+
+Identifiers: userId, email, username
+
+Personal Information: firstName, lastName, dateOfBirth, etc.
+
+Contact Information: email, phoneNumber
+
+Security and Login Details: passwordHash, lastLoginDate
+
+Custom Attributes (if any): For example, userRole, country
+
+
+
+---
+
+2. Create the Database Table
+
+Here's an example schema for a SQL-based database:
+
+CREATE TABLE Users (
+    UserId UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(), -- Unique identifier for the user
+    Email NVARCHAR(256) NOT NULL,                        -- User's email
+    Username NVARCHAR(100) NULL,                        -- Optional username
+    FirstName NVARCHAR(100) NULL,                       -- User's first name
+    LastName NVARCHAR(100) NULL,                        -- User's last name
+    DateOfBirth DATE NULL,                              -- User's date of birth
+    PhoneNumber NVARCHAR(15) NULL,                      -- User's phone number
+    PasswordHash NVARCHAR(256) NOT NULL,                -- Hashed password
+    LastLoginDate DATETIME NULL,                        -- Last login timestamp
+    IsActive BIT DEFAULT 1,                             -- Account active status
+    CreatedDate DATETIME DEFAULT GETDATE(),             -- Record creation date
+    UpdatedDate DATETIME DEFAULT GETDATE(),             -- Record last update
+    CustomAttribute1 NVARCHAR(100) NULL,                -- Example custom attribute
+    CustomAttribute2 NVARCHAR(100) NULL                 -- Example custom attribute
+);
+
+
+---
+
+3. Syncing Data with ADB2C
+
+Approach 1: Use Azure AD Graph API or Microsoft Graph API to retrieve user profiles and store them in the table.
+
+Approach 2: Use custom Azure AD B2C policies or REST API integrations to sync user data with your database during sign-up or update.
+
+
+Example of retrieving users with Microsoft Graph API:
+
+GET https://graph.microsoft.com/v1.0/users
+Authorization: Bearer <ACCESS_TOKEN>
+
+
+---
+
+4. Password Management
+
+Azure AD B2C handles password security. If you're storing passwords in your database:
+
+1. Hash the password securely using algorithms like bcrypt.
+
+
+2. Store only the hashed version in PasswordHash.
+
+
+
+
+---
+
+5. Custom Attributes in Azure AD B2C
+
+If you use custom attributes, ensure your database schema matches:
+
+1. Define the custom attribute in ADB2C.
+
+
+2. Add corresponding fields in your Users table.
+
+
+
+
+---
+
+6. Optional: Azure AD B2C Integration in Application
+
+If your application uses .NET Core:
+
+Use Microsoft.Identity.Web for authentication.
+
+Save user claims (retrieved during authentication) into your Users table.
+
+
+Example:
+
+var userId = User.FindFirst("sub")?.Value; // ADB2C unique user ID
+var email = User.FindFirst("emails")?.Value;
+
+This data can be inserted into your database.
+
+
+---
+
+Let me know if you need help implementing any part of this!
+
