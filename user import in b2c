@@ -1,0 +1,255 @@
+Here's a complete guide to import users and roles from a CSV into Azure AD B2C using C#.
+
+
+---
+
+Prerequisites:
+
+1. Install .NET Core 8 SDK (if not already).
+
+
+2. Register an App in Azure AD B2C:
+
+Go to Azure Portal > Azure AD B2C.
+
+Select App Registrations > New Registration.
+
+Choose Accounts in this directory only.
+
+Under API Permissions, add:
+
+User.ReadWrite.All
+
+Group.ReadWrite.All
+
+Directory.ReadWrite.All
+
+
+Generate a Client Secret under Certificates & Secrets.
+
+Copy the Tenant ID, Client ID, and Client Secret.
+
+
+
+3. Install Required NuGet Packages:
+
+dotnet add package Microsoft.Graph
+dotnet add package Azure.Identity
+dotnet add package CsvHelper
+
+
+
+
+---
+
+Step 1: Create CSV File (users.csv)
+
+Create a CSV file with the following format:
+
+email,givenName,surname,displayName,password,role
+user1@example.com,John,Doe,John Doe,P@ssword123!,Admin
+user2@example.com,Jane,Smith,Jane Smith,P@ssword456!,User
+user3@example.com,Mike,Brown,Mike Brown,P@ssword789!,Admin
+
+
+---
+
+Step 2: Create C# Project
+
+1. Create a new console app:
+
+dotnet new console -n AzureB2CUserImport
+cd AzureB2CUserImport
+
+
+2. Replace the Program.cs with the following code:
+
+
+
+
+---
+
+Program.cs
+
+using Microsoft.Graph;
+using Azure.Identity;
+using System;
+using System.IO;
+using System.Collections.Generic;
+using CsvHelper;
+using System.Globalization;
+using System.Linq;
+using System.Threading.Tasks;
+
+class User
+{
+    public string Email { get; set; }
+    public string GivenName { get; set; }
+    public string Surname { get; set; }
+    public string DisplayName { get; set; }
+    public string Password { get; set; }
+    public string Role { get; set; }
+}
+
+class Program
+{
+    static async Task Main(string[] args)
+    {
+        // Azure AD B2C Configurations
+        var tenantId = "<your-tenant-id>";
+        var clientId = "<your-client-id>";
+        var clientSecret = "<your-client-secret>";
+
+        // Initialize Microsoft Graph Client
+        var clientSecretCredential = new ClientSecretCredential(tenantId, clientId, clientSecret);
+        var graphClient = new GraphServiceClient(clientSecretCredential);
+
+        // Path to CSV file
+        string csvPath = @"C:\Path\to\users.csv";
+
+        // Read users from CSV
+        var users = ReadUsersFromCsv(csvPath);
+
+        // Ensure Role Groups Exist (Admin, User)
+        var roleGroups = await EnsureRoleGroupsExist(graphClient, new List<string> { "Admin", "User" });
+
+        // Import Users and Assign Roles
+        foreach (var user in users)
+        {
+            try
+            {
+                var createdUser = await CreateUser(graphClient, user);
+                Console.WriteLine($"Created user: {user.Email}");
+
+                // Assign Role (Group Membership)
+                if (roleGroups.ContainsKey(user.Role))
+                {
+                    await AssignUserToGroup(graphClient, createdUser.Id, roleGroups[user.Role]);
+                    Console.WriteLine($"Assigned {user.Email} to {user.Role} group");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error creating user {user.Email}: {ex.Message}");
+            }
+        }
+
+        Console.WriteLine("User import and role assignment completed.");
+    }
+
+    // Read Users from CSV
+    static List<User> ReadUsersFromCsv(string path)
+    {
+        using var reader = new StreamReader(path);
+        using var csv = new CsvReader(reader, CultureInfo.InvariantCulture);
+        return csv.GetRecords<User>().ToList();
+    }
+
+    // Ensure Role Groups Exist in B2C
+    static async Task<Dictionary<string, string>> EnsureRoleGroupsExist(GraphServiceClient client, List<string> roles)
+    {
+        var roleGroups = new Dictionary<string, string>();
+        var existingGroups = await client.Groups.Request().Filter("securityEnabled eq true").GetAsync();
+
+        foreach (var role in roles)
+        {
+            var group = existingGroups.FirstOrDefault(g => g.DisplayName == role);
+            if (group == null)
+            {
+                var newGroup = new Group
+                {
+                    DisplayName = role,
+                    SecurityEnabled = true,
+                    MailEnabled = false,
+                    MailNickname = role
+                };
+                var createdGroup = await client.Groups.Request().AddAsync(newGroup);
+                roleGroups[role] = createdGroup.Id;
+                Console.WriteLine($"Created group: {role}");
+            }
+            else
+            {
+                roleGroups[role] = group.Id;
+                Console.WriteLine($"Group already exists: {role}");
+            }
+        }
+        return roleGroups;
+    }
+
+    // Create User in Azure AD B2C
+    static async Task<User> CreateUser(GraphServiceClient client, User user)
+    {
+        var newUser = new Microsoft.Graph.User
+        {
+            AccountEnabled = true,
+            DisplayName = user.DisplayName,
+            MailNickname = user.GivenName,
+            UserPrincipalName = user.Email,
+            PasswordProfile = new PasswordProfile
+            {
+                ForceChangePasswordNextSignIn = false,
+                Password = user.Password
+            },
+            GivenName = user.GivenName,
+            Surname = user.Surname
+        };
+
+        return await client.Users.Request().AddAsync(newUser);
+    }
+
+    // Assign User to Group (Role)
+    static async Task AssignUserToGroup(GraphServiceClient client, string userId, string groupId)
+    {
+        var directoryObject = new DirectoryObject { Id = userId };
+        await client.Groups[groupId].Members.References.Request().AddAsync(directoryObject);
+    }
+}
+
+
+---
+
+Step 3: Run the Program
+
+1. Open terminal and run:
+
+dotnet run
+
+
+2. Users will be created, and roles will be assigned.
+
+
+
+
+---
+
+Testing and Verification:
+
+Go to Azure Portal > Azure AD B2C > Users to verify users.
+
+Check under Groups to ensure users are assigned to the correct roles.
+
+
+
+---
+
+Error Handling:
+
+Duplicate User Handling: Catch ConflictException for users that already exist.
+
+Logging: Implement logging to track errors and progress.
+
+
+
+---
+
+Enhancements (Optional):
+
+Email Users after creation with a welcome email.
+
+Batch Processing for larger user imports to avoid rate limits.
+
+Hash Passwords: Use hashed passwords instead of plaintext.
+
+
+Let me know if you need help with Azure B2C setup or API permissions!
+
