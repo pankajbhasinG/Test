@@ -1,0 +1,107 @@
+Yes, to maintain existing roles for users in Azure AD B2C, you need to create roles (groups) first. In Azure AD B2C, roles are typically managed as Security Groups. Users are then assigned to these groups, effectively replicating their roles.
+
+
+---
+
+Steps to Create Roles (Groups) in Azure AD B2C:
+
+1. Sign in to Azure Portal
+
+Go to Azure AD B2C > Groups.
+
+
+
+2. Create New Groups (Roles):
+
+Click on New Group.
+
+Select Security as the Group Type.
+
+For Group Name, use your role names (e.g., Admin, User, Manager).
+
+Leave Membership type as Assigned.
+
+Click Create.
+
+
+
+3. Repeat for all roles you need to import (like Admin, User, Viewer).
+
+
+
+
+---
+
+Programmatic Role Creation (Optional - Automate Group Creation):
+
+If you have many roles, automate group creation using Microsoft Graph API.
+
+static async Task<Dictionary<string, string>> EnsureRoleGroupsExist(GraphServiceClient client, List<string> roles)
+{
+    var roleGroups = new Dictionary<string, string>();
+    var existingGroups = await client.Groups.Request()
+        .Filter("securityEnabled eq true")
+        .GetAsync();
+
+    foreach (var role in roles)
+    {
+        var group = existingGroups.FirstOrDefault(g => g.DisplayName == role);
+        if (group == null)
+        {
+            var newGroup = new Group
+            {
+                DisplayName = role,
+                SecurityEnabled = true,
+                MailEnabled = false,
+                MailNickname = role
+            };
+            var createdGroup = await client.Groups.Request().AddAsync(newGroup);
+            roleGroups[role] = createdGroup.Id;
+            Console.WriteLine($"Created group: {role}");
+        }
+        else
+        {
+            roleGroups[role] = group.Id;
+            Console.WriteLine($"Group already exists: {role}");
+        }
+    }
+    return roleGroups;
+}
+
+
+---
+
+Assign Users to Roles (Groups) After Creation
+
+Once groups are created:
+
+Import users into B2C.
+
+Assign users to the correct groups based on their roles.
+
+
+
+---
+
+Role Assignment Code:
+
+static async Task AssignUserToGroup(GraphServiceClient client, string userId, string groupId)
+{
+    var directoryObject = new DirectoryObject { Id = userId };
+    await client.Groups[groupId].Members.References.Request().AddAsync(directoryObject);
+}
+
+
+---
+
+Testing:
+
+1. Go to Azure AD B2C > Users.
+
+
+2. Select a user and check their Group memberships.
+
+
+
+Would you like to automate user assignment to groups after import or handle it manually?
+
