@@ -365,5 +365,245 @@ Duplicate Handling to update roles for existing users without recreating them.
 
 Would you like to add error logging or API pagination?
 
+-----
+Error logging 
+
+---
+
+
+Let's enhance the code by adding error logging and pagination to handle large datasets efficiently. This ensures smooth operation even if there are many users or groups.
+
+
+---
+
+Enhancements Overview:
+
+1. Error Logging – Log import failures to a file.
+
+
+2. Pagination – Handle more than 100 users/groups at a time by paginating Graph API requests.
+
+
+
+
+---
+
+Updated C# Code with Error Logging and Pagination:
+
+using Microsoft.Graph;
+using Azure.Identity;
+using System;
+using System.IO;
+using CsvHelper;
+using System.Globalization;
+using System.Linq;
+using System.Threading.Tasks;
+using System.Collections.Generic;
+
+class User
+{
+    public string Email { get; set; }
+    public string GivenName { get; set; }
+    public string Surname { get; set; }
+    public string DisplayName { get; set; }
+    public string Password { get; set; }
+    public string Role { get; set; }
+}
+
+class Program
+{
+    static async Task Main(string[] args)
+    {
+        // Azure AD B2C Configuration
+        var tenantId = "<your-tenant-id>";
+        var clientId = "<your-client-id>";
+        var clientSecret = "<your-client-secret>";
+
+        // Initialize Graph Client
+        var credential = new ClientSecretCredential(tenantId, clientId, clientSecret);
+        var graphClient = new GraphServiceClient(credential);
+
+        // Path to CSV file and log file
+        string csvPath = @"C:\Path\to\users.csv";
+        string logPath = @"C:\Path\to\error_log.txt";
+
+        // Read users from CSV
+        var users = ReadUsersFromCsv(csvPath);
+
+        // Create Role Groups if they don't exist
+        var roleGroups = await EnsureRoleGroupsExist(graphClient, users.Select(u => u.Role).Distinct().ToList());
+
+        // Import Users and Assign to Groups
+        foreach (var user in users)
+        {
+            try
+            {
+                var createdUser = await CreateUser(graphClient, user);
+                Console.WriteLine($"User created: {user.Email}");
+
+                // Assign user to role group
+                if (roleGroups.ContainsKey(user.Role))
+                {
+                    await AssignUserToGroup(graphClient, createdUser.Id, roleGroups[user.Role]);
+                    Console.WriteLine($"Assigned {user.Email} to {user.Role} group");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogError(logPath, user.Email, ex.Message);
+                Console.WriteLine($"Failed to import {user.Email}. Error logged.");
+            }
+        }
+
+        Console.WriteLine("User import and role assignment completed.");
+    }
+
+    // Read Users from CSV
+    static List<User> ReadUsersFromCsv(string path)
+    {
+        using var reader = new StreamReader(path);
+        using var csv = new CsvReader(reader, CultureInfo.InvariantCulture);
+        return csv.GetRecords<User>().ToList();
+    }
+
+    // Create or Ensure Role Groups Exist (with Pagination)
+    static async Task<Dictionary<string, string>> EnsureRoleGroupsExist(GraphServiceClient client, List<string> roles)
+    {
+        var roleGroups = new Dictionary<string, string>();
+
+        // Get all groups using pagination
+        var allGroups = await PaginatedRequest(client.Groups.Request().Filter("securityEnabled eq true"));
+
+        foreach (var role in roles)
+        {
+            var group = allGroups.FirstOrDefault(g => g.DisplayName == role);
+            if (group == null)
+            {
+                var newGroup = new Group
+                {
+                    DisplayName = role,
+                    SecurityEnabled = true,
+                    MailEnabled = false,
+                    MailNickname = role
+                };
+                var createdGroup = await client.Groups.Request().AddAsync(newGroup);
+                roleGroups[role] = createdGroup.Id;
+                Console.WriteLine($"Created new group: {role}");
+            }
+            else
+            {
+                roleGroups[role] = group.Id;
+                Console.WriteLine($"Group already exists: {role}");
+            }
+        }
+        return roleGroups;
+    }
+
+    // Create User in Azure AD B2C
+    static async Task<User> CreateUser(GraphServiceClient client, User user)
+    {
+        var newUser = new Microsoft.Graph.User
+        {
+            AccountEnabled = true,
+            DisplayName = user.DisplayName,
+            MailNickname = user.GivenName,
+            UserPrincipalName = user.Email,
+            PasswordProfile = new PasswordProfile
+            {
+                ForceChangePasswordNextSignIn = false,
+                Password = user.Password
+            },
+            GivenName = user.GivenName,
+            Surname = user.Surname
+        };
+
+        return await client.Users.Request().AddAsync(newUser);
+    }
+
+    // Assign User to Group (Role)
+    static async Task AssignUserToGroup(GraphServiceClient client, string userId, string groupId)
+    {
+        var directoryObject = new DirectoryObject { Id = userId };
+        await client.Groups[groupId].Members.References.Request().AddAsync(directoryObject);
+    }
+
+    // Log Errors to File
+    static void LogError(string path, string email, string message)
+    {
+        using (var writer = new StreamWriter(path, true))
+        {
+            writer.WriteLine($"{DateTime.Now}: Failed to import {email}. Error: {message}");
+        }
+    }
+
+    // Handle Pagination for Large Datasets
+    static async Task<List<Group>> PaginatedRequest(IGraphServiceGroupsCollectionRequest request)
+    {
+        var allItems = new List<Group>();
+        while (request != null)
+        {
+            var response = await request.GetAsync();
+            allItems.AddRange(response.CurrentPage);
+            request = response.NextPageRequest;
+        }
+        return allItems;
+    }
+}
+
+
+---
+
+How It Works (Enhancements Explained):
+
+1. Pagination for Groups:
+
+Handles more than 100 groups by retrieving them page by page (response.NextPageRequest).
+
+Ensures no group is missed if Azure AD B2C has many role groups.
+
+
+
+2. Error Logging:
+
+If a user fails to import (e.g., email conflict, password error), the error is logged to a file (error_log.txt).
+
+Logs include timestamp, email, and error message.
+
+
+
+3. Batch Processing (Optional Next Step):
+
+For large datasets, use batch API calls to import users in chunks.
+
+
+
+
+
+---
+
+Testing and Validation:
+
+1. Run the code with a test CSV.
+
+
+2. Check Azure AD B2C to verify users and groups.
+
+
+3. Review error_log.txt for any failed imports.
+
+
+
+
+---
+
+Scalability Considerations:
+
+Batch Processing can further optimize imports for over 1000 users.
+
+Use Try-Catch around group creation and user import for graceful error handling.
+
+
+Would you like to add batch user import for faster large-scale migrations?
+
 
 
