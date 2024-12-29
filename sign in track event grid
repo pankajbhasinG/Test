@@ -1,0 +1,204 @@
+If you need to capture both sign-in and sign-up users from Azure AD B2C and insert them into your on-prem SQL Server, you can achieve this by enabling and routing the appropriate diagnostic logs to Event Grid. This way, you track:
+
+1. Sign-ups – Logged in AuditLogs and ProvisioningLogs as UserCreated events.
+
+
+2. Sign-ins – Logged in SignInLogs.
+
+
+
+
+---
+
+How to Capture Both Sign-In and Sign-Up Events:
+
+1. Enable Diagnostic Logs for All Events:
+
+1. Go to Azure Portal → Azure AD B2C.
+
+
+2. Select Audit Logs → Diagnostic Settings.
+
+
+3. Click + Add Diagnostic Setting.
+
+
+4. Under Category Details, select:
+
+✅ AuditLogs – (Tracks user creation, updates, and deletions).
+
+✅ SignInLogs – (Tracks user sign-ins).
+
+✅ ProvisioningLogs – (Captures social/external provider sign-ups).
+
+
+
+5. Under Destination Details, choose:
+
+Send to Event Grid → Yes
+
+
+
+6. Click Save.
+
+
+
+
+---
+
+2. Create Event Grid Subscription for Both Sign-In and Sign-Up:
+
+1. Go to Event Grid → Event Subscriptions.
+
+
+2. Click + Create Event Subscription.
+
+
+3. Configure the following:
+
+Topic Type: Microsoft Entra ID (Azure AD B2C)
+
+Source Resource: Select your Azure AD B2C tenant.
+
+Event Types:
+
+✅ Microsoft Entra ID > User Created (Sign-up)
+
+✅ Microsoft Entra ID > User Signed In (Sign-in)
+
+
+Endpoint Type: Azure Function or Logic App.
+
+Function URL: Select your function that inserts user data into SQL Server.
+
+
+
+4. Click Create.
+
+
+
+
+---
+
+3. Azure Function to Insert Users into SQL Server:
+
+The Azure Function will receive both sign-up and sign-in events and insert/update user records in SQL Server.
+
+C# Example – Insert/Update Users on Sign-Up or Sign-In:
+
+using System;
+using System.Data.SqlClient;
+using Microsoft.Azure.Functions.Worker;
+using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
+
+public static class B2CEventTrigger
+{
+    [Function("B2CEventTrigger")]
+    public static void Run(
+        [EventGridTrigger] EventGridEvent eventGridEvent,
+        FunctionContext context)
+    {
+        var logger = context.GetLogger("B2CEventTrigger");
+        logger.LogInformation($"Event Received: {eventGridEvent.EventType}");
+
+        var userData = JsonConvert.DeserializeObject<UserData>(eventGridEvent.Data.ToString());
+
+        string connectionString = Environment.GetEnvironmentVariable("SQL_CONNECTION_STRING");
+
+        using (SqlConnection conn = new SqlConnection(connectionString))
+        {
+            conn.Open();
+            var query = @"
+                IF EXISTS (SELECT 1 FROM Users WHERE Email = @Email)
+                UPDATE Users SET LastSignIn = GETDATE()
+                WHERE Email = @Email
+                ELSE
+                INSERT INTO Users (UserName, Email, SignUpDate, LastSignIn)
+                VALUES (@UserName, @Email, GETDATE(), GETDATE())";
+
+            using (SqlCommand cmd = new SqlCommand(query, conn))
+            {
+                cmd.Parameters.AddWithValue("@UserName", userData.UserName ?? "Unknown");
+                cmd.Parameters.AddWithValue("@Email", userData.Email);
+                cmd.ExecuteNonQuery();
+            }
+        }
+    }
+}
+
+public class UserData
+{
+    public string UserName { get; set; }
+    public string Email { get; set; }
+}
+
+
+---
+
+4. Handling Duplicate Users (Sign-Up vs. Sign-In):
+
+On Sign-Up: Insert a new record in SQL.
+
+On Sign-In:
+
+If the user already exists, update the LastSignIn timestamp.
+
+If the user doesn’t exist (rare case), insert them as a new user.
+
+
+
+
+---
+
+5. Testing and Monitoring:
+
+1. Perform a new user sign-up through your Azure AD B2C user flow.
+
+
+2. Perform a sign-in as the same user.
+
+
+3. Check SQL Server to ensure the record exists and LastSignIn is updated.
+
+
+
+
+---
+
+Advantages of Capturing Both Events:
+
+Complete User Tracking: Monitor user lifecycle from sign-up to ongoing sign-ins.
+
+Engagement Metrics: Track active users and sign-in frequency.
+
+Security and Auditing: Log sign-ins for compliance and detect unusual activity.
+
+
+
+---
+
+Event Type Breakdown:
+
+
+---
+
+Considerations for On-Prem SQL Connectivity:
+
+Hybrid Connection: Use Azure App Service Hybrid Connections to securely connect to on-prem SQL.
+
+VPN Gateway: Set up a VPN gateway between Azure and your on-premises environment.
+
+Private Link: If SQL is hosted in Azure, use Private Link for secure connections.
+
+
+
+---
+
+Next Steps:
+
+Do you need help configuring the Hybrid Connection or VPN Gateway to securely connect Azure Functions to SQL Server?
+
+Would you like guidance on Application Insights for monitoring sign-up and sign-in metrics?
+
+
