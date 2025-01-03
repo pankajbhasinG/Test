@@ -1,0 +1,263 @@
+Here’s how to build a C# API to migrate users to Azure AD B2C using ASP.NET Core and Microsoft Graph API.
+
+
+---
+
+Prerequisites:
+
+Visual Studio (with .NET Core 8 SDK).
+
+SQL Server (with user data).
+
+Azure AD B2C tenant.
+
+Registered Azure AD B2C app (with User.ReadWrite.All permission).
+
+
+
+---
+
+Step 1: Create ASP.NET Core Web API
+
+1. Open Visual Studio and create a new project:
+
+ASP.NET Core Web API.
+
+Select .NET 8 (or latest).
+
+
+
+2. Install required packages:
+
+
+
+dotnet add package Microsoft.Graph
+dotnet add package Microsoft.Identity.Client
+dotnet add package Microsoft.EntityFrameworkCore.SqlServer
+dotnet add package Microsoft.EntityFrameworkCore.Design
+
+
+---
+
+Step 2: Configure AppSettings.json
+
+Add Azure B2C and SQL Server details to appsettings.json:
+
+{
+  "AzureAdB2C": {
+    "TenantId": "your-tenant-id",
+    "ClientId": "your-client-id",
+    "ClientSecret": "your-client-secret"
+  },
+  "ConnectionStrings": {
+    "DefaultConnection": "Server=your-server;Database=UsersDb;User Id=dbuser;Password=dbpassword;"
+  }
+}
+
+
+---
+
+Step 3: Create Database Context and Model
+
+1. Create a Models folder.
+
+
+2. Add UserModel.cs:
+
+
+
+namespace UserMigrationAPI.Models
+{
+    public class UserModel
+    {
+        public int UserId { get; set; }
+        public string DisplayName { get; set; }
+        public string Email { get; set; }
+        public string PasswordHash { get; set; }
+    }
+}
+
+3. Add ApplicationDbContext.cs:
+
+
+
+using Microsoft.EntityFrameworkCore;
+
+namespace UserMigrationAPI.Models
+{
+    public class ApplicationDbContext : DbContext
+    {
+        public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
+            : base(options) { }
+
+        public DbSet<UserModel> Users { get; set; }
+    }
+}
+
+
+---
+
+Step 4: Setup Graph Client Service
+
+Create a new folder Services and add GraphClientService.cs:
+
+using Microsoft.Graph;
+using Microsoft.Identity.Client;
+
+namespace UserMigrationAPI.Services
+{
+    public class GraphClientService
+    {
+        private readonly GraphServiceClient _graphClient;
+
+        public GraphClientService(IConfiguration config)
+        {
+            var tenantId = config["AzureAdB2C:TenantId"];
+            var clientId = config["AzureAdB2C:ClientId"];
+            var clientSecret = config["AzureAdB2C:ClientSecret"];
+
+            var confidentialClient = ConfidentialClientApplicationBuilder
+                .Create(clientId)
+                .WithClientSecret(clientSecret)
+                .WithAuthority($"https://login.microsoftonline.com/{tenantId}")
+                .Build();
+
+            var authProvider = new DelegateAuthenticationProvider(async requestMessage =>
+            {
+                var authResult = await confidentialClient
+                    .AcquireTokenForClient(new[] { "https://graph.microsoft.com/.default" })
+                    .ExecuteAsync();
+
+                requestMessage.Headers.Authorization =
+                    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", authResult.AccessToken);
+            });
+
+            _graphClient = new GraphServiceClient(authProvider);
+        }
+
+        public async Task CreateUserAsync(UserModel user)
+        {
+            var newUser = new User
+            {
+                AccountEnabled = true,
+                DisplayName = user.DisplayName,
+                MailNickname = user.DisplayName.ToLower(),
+                UserPrincipalName = user.Email,
+                PasswordProfile = new PasswordProfile
+                {
+                    ForceChangePasswordNextSignIn = true,
+                    Password = "Temp@12345"
+                }
+            };
+
+            await _graphClient.Users.Request().AddAsync(newUser);
+        }
+    }
+}
+
+
+---
+
+Step 5: Create API Controller
+
+Add UsersController.cs in the Controllers folder:
+
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using UserMigrationAPI.Models;
+using UserMigrationAPI.Services;
+
+namespace UserMigrationAPI.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class UsersController : ControllerBase
+    {
+        private readonly ApplicationDbContext _context;
+        private readonly GraphClientService _graphService;
+
+        public UsersController(ApplicationDbContext context, GraphClientService graphService)
+        {
+            _context = context;
+            _graphService = graphService;
+        }
+
+        [HttpPost("migrate")]
+        public async Task<IActionResult> MigrateUsers()
+        {
+            var users = await _context.Users.ToListAsync();
+
+            foreach (var user in users)
+            {
+                try
+                {
+                    await _graphService.CreateUserAsync(user);
+                    Console.WriteLine($"Migrated: {user.Email}");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Failed to migrate {user.Email}: {ex.Message}");
+                }
+            }
+
+            return Ok("Migration completed.");
+        }
+    }
+}
+
+
+---
+
+Step 6: Configure Program.cs
+
+Modify Program.cs to configure services:
+
+using Microsoft.EntityFrameworkCore;
+using UserMigrationAPI.Models;
+using UserMigrationAPI.Services;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Add services
+builder.Services.AddControllers();
+builder.Services.AddScoped<GraphClientService>();
+
+// Database context
+builder.Services.AddDbContext<ApplicationDbContext>(options =>
+    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+var app = builder.Build();
+app.MapControllers();
+app.Run();
+
+
+---
+
+Step 7: Run and Test API
+
+1. Start API:
+
+dotnet run
+
+
+2. Migrate Users:
+Use Postman or curl:
+
+curl -X POST https://localhost:5001/api/users/migrate
+
+
+
+
+---
+
+Next Steps:
+
+Batch Processing for large datasets.
+
+Error Logging using Serilog.
+
+Implement Secure Password Reset during first sign-in.
+
+
+Would you like to add JWT authentication or logging to the API?
+
