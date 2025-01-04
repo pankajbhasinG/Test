@@ -1,0 +1,195 @@
+Here's how you can create a .NET 8 Web API project to manage user migration to Azure AD B2C using Microsoft Graph API.
+
+
+---
+
+1. Create a New .NET 8 Web API Project
+
+dotnet new webapi -n UserMigrationApi
+cd UserMigrationApi
+
+
+---
+
+2. Install Required NuGet Packages
+
+dotnet add package Microsoft.Graph
+dotnet add package Azure.Identity
+
+
+---
+
+3. Configure appsettings.json
+
+Add Azure AD B2C credentials to appsettings.json:
+
+{
+  "AzureAdB2C": {
+    "TenantId": "YOUR_TENANT_ID",
+    "ClientId": "YOUR_CLIENT_ID",
+    "ClientSecret": "YOUR_CLIENT_SECRET"
+  }
+}
+
+
+---
+
+4. Create a GraphService Class
+
+Services/GraphService.cs
+
+using Azure.Identity;
+using Microsoft.Graph;
+using Microsoft.Extensions.Options;
+using System.Threading.Tasks;
+
+public class GraphService
+{
+    private readonly GraphServiceClient _graphClient;
+
+    public GraphService(IOptions<AzureAdB2COptions> options)
+    {
+        var tenantId = options.Value.TenantId;
+        var clientId = options.Value.ClientId;
+        var clientSecret = options.Value.ClientSecret;
+
+        var clientSecretCredential = new ClientSecretCredential(tenantId, clientId, clientSecret);
+        _graphClient = new GraphServiceClient(clientSecretCredential);
+    }
+
+    public async Task<string> CreateUserAsync(User user)
+    {
+        try
+        {
+            await _graphClient.Users.Request().AddAsync(user);
+            return $"User {user.DisplayName} created successfully.";
+        }
+        catch (Exception ex)
+        {
+            return $"Error creating user: {ex.Message}";
+        }
+    }
+}
+
+
+---
+
+5. Create API Controller
+
+Controllers/UserMigrationController.cs
+
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Graph;
+using System.Threading.Tasks;
+
+[ApiController]
+[Route("api/[controller]")]
+public class UserMigrationController : ControllerBase
+{
+    private readonly GraphService _graphService;
+
+    public UserMigrationController(GraphService graphService)
+    {
+        _graphService = graphService;
+    }
+
+    [HttpPost]
+    public async Task<IActionResult> MigrateUser([FromBody] User user)
+    {
+        var result = await _graphService.CreateUserAsync(user);
+        return Ok(new { Message = result });
+    }
+}
+
+
+---
+
+6. Register Services in Program.cs
+
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.Configure<AzureAdB2COptions>(
+    builder.Configuration.GetSection("AzureAdB2C"));
+
+builder.Services.AddSingleton<GraphService>();
+
+builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+
+var app = builder.Build();
+
+app.UseSwagger();
+app.UseSwaggerUI();
+
+app.MapControllers();
+app.Run();
+
+
+---
+
+7. Define Configuration Model
+
+Models/AzureAdB2COptions.cs
+
+public class AzureAdB2COptions
+{
+    public string TenantId { get; set; }
+    public string ClientId { get; set; }
+    public string ClientSecret { get; set; }
+}
+
+
+---
+
+8. Test the API
+
+Run the API:
+
+
+dotnet run
+
+Test with Postman or Curl:
+
+
+POST https://localhost:5001/api/UserMigration
+Content-Type: application/json
+
+{
+  "accountEnabled": true,
+  "displayName": "John Doe",
+  "mailNickname": "johndoe",
+  "userPrincipalName": "johndoe@YOUR_TENANT.onmicrosoft.com",
+  "passwordProfile": {
+    "forceChangePasswordNextSignIn": false,
+    "password": "P@ssword123!"
+  }
+}
+
+
+---
+
+How It Works
+
+The API endpoint accepts user details and calls Microsoft Graph to create the user in Azure AD B2C.
+
+It leverages dependency injection to manage configuration and services.
+
+GraphService handles interaction with Microsoft Graph API.
+
+
+
+---
+
+Security Considerations
+
+Secure appsettings.json: Store secrets in Azure Key Vault or environment variables.
+
+OAuth 2.0: Use OAuth for securing API endpoints if exposed publicly.
+
+
+Would you like to add authentication to this API or bulk import functionality?
+
