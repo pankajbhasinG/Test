@@ -1,0 +1,215 @@
+Migrating users from different domains to Azure AD B2C involves several steps to ensure that users from various domains are correctly mapped and migrated. Below is a recommended approach for migrating users from different domains to Azure AD B2C:
+
+Approach for Migrating Users from Different Domains to Azure AD B2C
+
+
+---
+
+1. Pre-Migration Planning
+
+1.1 Identify Source Domains
+
+List all the domains from which users need to be migrated.
+
+Verify that these domains are added and verified in Azure AD B2C. Each domain needs to be verified before migration.
+
+
+1.2 Choose a Primary Domain Strategy
+
+Decide whether to keep onmicrosoft.com as the primary domain or choose a custom domain for the user base (e.g., user@customdomain.com).
+
+Consider user naming conventions, and map old UPNs (User Principal Names) to new domains correctly.
+
+
+1.3 User Attributes Mapping
+
+Ensure that the required user attributes like userPrincipalName, email, givenName, surname, and groups are properly mapped from the source domain.
+
+Consider custom attributes if necessary (e.g., Employee ID, Department, etc.).
+
+
+
+---
+
+2. Domain Verification in Azure AD B2C
+
+1. Add and verify all custom domains in Azure AD B2C before migrating users.
+
+Steps:
+
+Go to Azure AD B2C > Custom Domain Names.
+
+Add the custom domains and ensure they are verified by adding the provided TXT record in your DNS provider.
+
+
+
+
+2. Verify that the domains have propagated successfully, using tools like MXToolbox or through the Azure Portal.
+
+
+
+
+---
+
+3. Prepare for User Migration
+
+3.1 Export Users from Source Directories
+
+If users are in on-premises Active Directory or another Azure AD tenant, you will need to export users into a suitable format, such as CSV or JSON.
+
+If they are in another cloud service (e.g., Google Workspace), use their respective APIs or export methods to gather user data.
+
+
+3.2 Use Azure AD B2C's API or PowerShell for Migration
+
+Azure AD B2C Migration Tools: Microsoft provides tools like the Bulk Import API to create users in bulk. Alternatively, PowerShell or Microsoft Graph can be used to script the user migration process.
+
+
+
+---
+
+4. Migration Process
+
+4.1 Create Users in Azure AD B2C
+
+Use one of the following methods for migrating users:
+
+4.1.1 Using Graph API
+
+For bulk migrations, use the Microsoft Graph API to create users with the new UPNs corresponding to each custom domain.
+
+API Call:
+
+POST https://graph.microsoft.com/v1.0/users
+Content-Type: application/json
+Authorization: Bearer {access_token}
+
+Request Body Example:
+
+{
+  "accountEnabled": true,
+  "displayName": "John Doe",
+  "mailNickname": "johndoe",
+  "userPrincipalName": "johndoe@customdomain.com",
+  "passwordProfile": {
+    "forceChangePasswordNextSignIn": true,
+    "password": "StrongPassword123!"
+  }
+}
+
+
+4.1.2 Using PowerShell
+
+You can use Azure AD PowerShell to create users from CSVs.
+
+Example:
+
+$users = Import-Csv -Path "users.csv"
+foreach ($user in $users) {
+    New-AzureADUser -DisplayName $user.DisplayName `
+        -UserPrincipalName "$($user.UserPrincipalName)@customdomain.com" `
+        -MailNickName $user.MailNickName `
+        -AccountEnabled $true `
+        -PasswordProfile (New-Object -TypeName Microsoft.Open.AzureAD.Model.PasswordProfile -Property @{Password = "TempPassword123"})
+}
+
+
+4.1.3 Bulk Import
+
+Azure AD B2C supports bulk import for users.
+
+Use Azure AD Graph API or Microsoft Graph API to import users in bulk.
+
+Example for bulk import:
+
+POST https://graph.microsoft.com/v1.0/users/import
+Content-Type: application/json
+Authorization: Bearer {access_token}
+
+Use CSV/JSON files containing user data to batch the migration.
+
+
+
+4.2 Map the Existing Users to Their New Domain
+
+If users already have a domain in their userPrincipalName, map it to their new domain using a script or logic (based on source domain).
+
+
+---
+
+5. Post-Migration Validation
+
+5.1 Validate User Sign-Ins
+
+Test User Accounts: Have a few users from each domain try logging in with their new domain credentials.
+
+SSO Configuration: Ensure Single Sign-On (SSO) is properly set up for users accessing other services.
+
+
+5.2 Validate UPN Change Propagation
+
+Ensure the UPN change is reflected across all Azure services.
+
+Check if the new domain is reflected in user profiles via:
+
+Azure Portal > Users > User Profile.
+
+Use Microsoft Graph or PowerShell to confirm UPN changes.
+
+
+
+5.3 Communication with Users
+
+Inform users about their new UPN (if applicable) and any action they need to take (e.g., password reset or re-authentication).
+
+
+
+---
+
+6. Ongoing Monitoring and Cleanup
+
+6.1 Monitor Sign-Ins
+
+Azure AD Sign-In Logs: Monitor the sign-in logs to detect any issues with authentication and domain access.
+
+
+6.2 Cleanup Old Users and Domains
+
+If necessary, remove users or domains from the old directory after migration.
+
+Ensure the old domains are decommissioned only after all users are migrated and fully operational.
+
+
+
+---
+
+7. Best Practices
+
+7.1 Use Azure AD Connect
+
+If you are migrating from an on-premises directory or want to sync users to Azure AD B2C, use Azure AD Connect for hybrid cloud solutions.
+
+7.2 Bulk Operations for Large Tenants
+
+For large migrations, break the process into smaller batches of users to prevent throttling by the Azure AD API.
+
+7.3 Test Migration
+
+Test the migration with a small group of users before migrating large groups to catch potential issues early.
+
+
+---
+
+8. Conclusion
+
+Migrating users from different domains to Azure AD B2C requires a structured approach:
+
+Ensure domains are verified and set up.
+
+Use Graph API or PowerShell scripts to migrate users in batches.
+
+Validate the migration to ensure users can access applications seamlessly.
+
+
+Would you like specific guidance on automating these migration steps or examples for bulk migration?
+
