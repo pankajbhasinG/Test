@@ -1,0 +1,248 @@
+Here’s how to build a C# Web API to update Azure AD B2C user domains from onmicrosoft.com to custom domains using Microsoft Graph API.
+
+
+---
+
+1. Project Setup
+
+1. Create a New ASP.NET Core Web API Project
+
+
+
+dotnet new webapi -n AADB2CUserUpdater
+cd AADB2CUserUpdater
+
+2. Install Required NuGet Packages
+
+
+
+dotnet add package Microsoft.Graph
+dotnet add package Microsoft.Identity.Client
+dotnet add package Microsoft.Extensions.Configuration.Json
+
+
+---
+
+2. Register an App in Azure AD B2C
+
+Go to Azure Portal > Azure AD B2C > App Registrations > New Registration.
+
+Add User.ReadWrite.All API permissions.
+
+Generate a client secret and note the tenant ID, client ID, and secret.
+
+
+
+---
+
+3. Configure Appsettings.json
+
+{
+  "AzureAdB2C": {
+    "TenantId": "your-tenant-id",
+    "ClientId": "your-client-id",
+    "ClientSecret": "your-client-secret"
+  }
+}
+
+
+---
+
+4. Create GraphServiceClient (GraphClientFactory.cs)
+
+using Microsoft.Graph;
+using Microsoft.Identity.Client;
+using System;
+
+public class GraphClientFactory
+{
+    public static GraphServiceClient CreateGraphClient(IConfiguration configuration)
+    {
+        var tenantId = configuration["AzureAdB2C:TenantId"];
+        var clientId = configuration["AzureAdB2C:ClientId"];
+        var clientSecret = configuration["AzureAdB2C:ClientSecret"];
+
+        var confidentialClient = ConfidentialClientApplicationBuilder
+            .Create(clientId)
+            .WithClientSecret(clientSecret)
+            .WithAuthority($"https://login.microsoftonline.com/{tenantId}")
+            .Build();
+
+        var authProvider = new ClientCredentialProvider(confidentialClient);
+
+        return new GraphServiceClient(authProvider);
+    }
+}
+
+
+---
+
+5. Create User Domain Mapping Controller (UsersController.cs)
+
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Graph;
+using System.Linq;
+using System.Threading.Tasks;
+using System.Collections.Generic;
+
+[ApiController]
+[Route("api/[controller]")]
+public class UsersController : ControllerBase
+{
+    private readonly GraphServiceClient _graphClient;
+
+    public UsersController(IConfiguration configuration)
+    {
+        _graphClient = GraphClientFactory.CreateGraphClient(configuration);
+    }
+
+    [HttpPost("update-domains")]
+    public async Task<IActionResult> UpdateDomains()
+    {
+        // Mapping domains
+        var domainMapping = new Dictionary<string, string>
+        {
+            { "yourtenant.onmicrosoft.com", "customdomain1.com" },
+            { "yourtenant2.onmicrosoft.com", "customdomain2.com" }
+        };
+
+        // Get all users with onmicrosoft.com UPN
+        var users = await _graphClient.Users
+            .Request()
+            .Filter("endsWith(userPrincipalName, 'onmicrosoft.com')")
+            .GetAsync();
+
+        var updatedUsers = new List<string>();
+
+        foreach (var user in users.CurrentPage)
+        {
+            var oldDomain = user.UserPrincipalName.Split('@').Last();
+
+            if (domainMapping.ContainsKey(oldDomain))
+            {
+                var newDomain = domainMapping[oldDomain];
+                var newUpn = $"{user.MailNickname}@{newDomain}";
+
+                await _graphClient.Users[user.Id]
+                    .Request()
+                    .UpdateAsync(new User
+                    {
+                        UserPrincipalName = newUpn
+                    });
+
+                updatedUsers.Add($"{user.UserPrincipalName} -> {newUpn}");
+            }
+        }
+
+        return Ok(new { message = "Users updated", updatedUsers });
+    }
+}
+
+
+---
+
+6. Program.cs
+
+using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Add services
+builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+
+var app = builder.Build();
+
+// Configure middleware
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+
+app.UseAuthorization();
+app.MapControllers();
+app.Run();
+
+
+---
+
+7. Test the API
+
+1. Run the API
+
+
+
+dotnet run
+
+2. POST Request to Update Users
+
+
+
+POST https://localhost:5001/api/users/update-domains
+
+
+---
+
+8. Handling Pagination (Optional for Large Tenants)
+
+If there are more users than can be retrieved in one call, handle pagination:
+
+var users = await _graphClient.Users
+    .Request()
+    .Top(100)  // Get 100 users at a time
+    .GetAsync();
+
+while (users.NextPageRequest != null)
+{
+    users = await users.NextPageRequest.GetAsync();
+}
+
+
+---
+
+9. Error Handling
+
+Add error handling to manage exceptions:
+
+try
+{
+    await _graphClient.Users[user.Id]
+        .Request()
+        .UpdateAsync(new User
+        {
+            UserPrincipalName = newUpn
+        });
+}
+catch (ServiceException ex)
+{
+    Console.WriteLine($"Error updating {user.UserPrincipalName}: {ex.Message}");
+}
+
+
+---
+
+10. Deployment
+
+Deploy the API to Azure App Service or containerize for Docker/Kubernetes deployment.
+
+Secure the API with Azure AD if needed.
+
+
+
+---
+
+Testing and Validation
+
+Test with a few users before bulk updating.
+
+Ensure correct API permissions (User.ReadWrite.All).
+
+Log updates to track changes.
+
+
+Would you like help with securing the API using Azure AD authentication or setting up App Services?
+
