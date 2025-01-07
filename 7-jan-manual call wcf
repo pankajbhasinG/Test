@@ -1,0 +1,138 @@
+To manually consume a WCF service using HttpClient in .NET Core 8, follow these steps:
+
+Scenario:
+
+Assume you are consuming a WCF service that has a GetCustomer method, exposed at:
+
+http://localhost:5000/CustomerService.svc
+
+
+---
+
+1. Set Up the HttpClient
+
+Install the latest System.Net.Http package (if not already included):
+
+dotnet add package System.Net.Http
+
+
+---
+
+2. Create a HttpClient Service
+
+Use HttpClient to send requests to the WCF endpoint.
+
+using System;
+using System.Net.Http;
+using System.Text;
+using System.Text.Json;
+using System.Threading.Tasks;
+
+public class CustomerServiceClient
+{
+    private readonly HttpClient _httpClient;
+    private readonly string _serviceUrl = "http://localhost:5000/CustomerService.svc";
+
+    public CustomerServiceClient(HttpClient httpClient)
+    {
+        _httpClient = httpClient;
+    }
+
+    public async Task<string> GetCustomerAsync(int customerId)
+    {
+        try
+        {
+            string url = $"{_serviceUrl}/GetCustomer";
+            
+            // Create the SOAP request
+            var soapRequest = $@"<?xml version=""1.0"" encoding=""utf-8""?>
+            <soap:Envelope xmlns:xsi=""http://www.w3.org/2001/XMLSchema-instance"" 
+                           xmlns:xsd=""http://www.w3.org/2001/XMLSchema"" 
+                           xmlns:soap=""http://schemas.xmlsoap.org/soap/envelope/"">
+              <soap:Body>
+                <GetCustomer xmlns=""http://tempuri.org/"">
+                  <customerId>{customerId}</customerId>
+                </GetCustomer>
+              </soap:Body>
+            </soap:Envelope>";
+
+            var content = new StringContent(soapRequest, Encoding.UTF8, "text/xml");
+
+            // Send the request
+            HttpResponseMessage response = await _httpClient.PostAsync(url, content);
+            response.EnsureSuccessStatusCode();
+
+            string responseBody = await response.Content.ReadAsStringAsync();
+            return responseBody;
+        }
+        catch (Exception ex)
+        {
+            return $"Error: {ex.Message}";
+        }
+    }
+}
+
+
+---
+
+3. Consume the Service in a Console App
+
+In Program.cs, instantiate the HttpClient and call the WCF method:
+
+using System;
+using System.Net.Http;
+using System.Threading.Tasks;
+
+class Program
+{
+    static async Task Main(string[] args)
+    {
+        var httpClient = new HttpClient();
+        var client = new CustomerServiceClient(httpClient);
+        
+        var result = await client.GetCustomerAsync(123);
+        Console.WriteLine(result);
+    }
+}
+
+
+---
+
+4. Handle SOAP Action (Optional for Some Services)
+
+Some WCF services may require a SOAPAction in the header:
+
+content.Headers.Add("SOAPAction", "http://tempuri.org/ICustomerService/GetCustomer");
+
+
+---
+
+5. Parse the Response
+
+If the response is XML, you can parse it using XmlDocument or XDocument:
+
+using System.Xml.Linq;
+
+XDocument doc = XDocument.Parse(responseBody);
+string customerName = doc.Descendants("CustomerName").FirstOrDefault()?.Value;
+Console.WriteLine($"Customer Name: {customerName}");
+
+
+---
+
+Key Points:
+
+SOAP Envelope: WCF uses SOAP envelopes, so structure the request in XML format.
+
+URL Encoding: Ensure special characters in XML are properly escaped.
+
+Error Handling: Catch HTTP errors and handle timeout scenarios.
+
+Deserialization: If the service returns complex objects, deserialize the response into C# objects using XmlSerializer or JsonSerializer.
+
+
+
+---
+
+Would you like me to show how to deserialize a complex SOAP response into a C# object?
+
