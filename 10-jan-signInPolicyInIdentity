@@ -1,0 +1,124 @@
+You're correct—signInNames is not a direct property in the Microsoft Graph API User object for Azure AD B2C. Instead, signInNames is used specifically in Azure AD B2C's Identity Experience Framework to manage user sign-ins. For users in Azure AD B2C, signInNames is stored under identities in Microsoft Graph.
+
+
+---
+
+Where Is signInNames in Microsoft Graph API?
+
+In Azure AD B2C, user identities (including sign-in names) are stored under the identities property. This property includes information such as the user’s email address, username, or phone number used for authentication.
+
+Example of identities Property:
+
+"identities": [
+  {
+    "signInType": "emailAddress",
+    "issuer": "yourtenant.onmicrosoft.com",
+    "issuerAssignedId": "user@example.com"
+  }
+]
+
+
+---
+
+Steps to Use identities Instead of signInNames
+
+1. Create a User with identities
+
+When creating or updating a user in Azure AD B2C via Microsoft Graph API, you should populate the identities property.
+
+Example API Request to Create a User:
+
+POST https://graph.microsoft.com/v1.0/users
+Content-Type: application/json
+
+{
+  "accountEnabled": true,
+  "displayName": "John Doe",
+  "identities": [
+    {
+      "signInType": "emailAddress",
+      "issuer": "yourtenant.onmicrosoft.com",
+      "issuerAssignedId": "user@example.com"
+    }
+  ],
+  "passwordProfile": {
+    "forceChangePasswordNextSignIn": false,
+    "password": "TempPassword123!"
+  }
+}
+
+2. Query a User by Their Identity
+
+To retrieve a user by their signInType (e.g., emailAddress), use the filter query in the Microsoft Graph API.
+
+Example API Request:
+
+GET https://graph.microsoft.com/v1.0/users?$filter=identities/any(c:c/issuerAssignedId eq 'user@example.com' and c/issuer eq 'yourtenant.onmicrosoft.com')
+
+
+---
+
+3. Update a User's identities Property
+
+If you need to update a user's sign-in name (e.g., email or username), modify the identities property.
+
+Example API Request:
+
+PATCH https://graph.microsoft.com/v1.0/users/{user-id}
+Content-Type: application/json
+
+{
+  "identities": [
+    {
+      "signInType": "emailAddress",
+      "issuer": "yourtenant.onmicrosoft.com",
+      "issuerAssignedId": "newuser@example.com"
+    }
+  ]
+}
+
+
+---
+
+4. Test Your Custom Policy with identities
+
+When using Azure AD B2C Custom Policies, ensure that your policy refers to the identities property, specifically the issuerAssignedId with the signInType you’ve chosen.
+
+Example in TrustFrameworkExtensions.xml:
+
+<ClaimType Id="signInName">
+  <DisplayName>Sign In Name</DisplayName>
+  <DataType>string</DataType>
+  <DefaultPartnerClaimTypes>
+    <Protocol Name="OAuth2" PartnerClaimType="username" />
+  </DefaultPartnerClaimTypes>
+  <UserHelpText>The sign-in name used for logging in</UserHelpText>
+</ClaimType>
+
+
+---
+
+Key Points
+
+1. signInNames Is Deprecated: Instead, use the identities property in Microsoft Graph API.
+
+
+2. identities Structure:
+
+signInType: The type of identifier (e.g., emailAddress, userName, phoneNumber).
+
+issuer: Your B2C tenant (e.g., yourtenant.onmicrosoft.com).
+
+issuerAssignedId: The value of the identifier (e.g., email or username).
+
+
+
+3. Custom Policies: Configure your custom policies to handle sign-ins based on the identities property.
+
+
+
+
+---
+
+Let me know if you need help with specific API calls or setting up custom policies!
+
