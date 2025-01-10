@@ -1,0 +1,230 @@
+To configure Azure AD B2C custom policies to handle sign-ins using the identities property (e.g., issuerAssignedId and signInType), follow these step-by-step instructions:
+
+
+---
+
+Step 1: Prerequisites
+
+1. Azure AD B2C Tenant:
+
+Ensure you have an Azure AD B2C tenant configured.
+
+Set up Identity Experience Framework in Azure AD B2C.
+
+
+
+2. Download the Starter Pack:
+
+Download the Azure AD B2C custom policy starter pack.
+
+
+
+3. Prepare Tenant-Specific Values:
+
+Replace placeholder values in the starter pack with your tenant details:
+
+yourtenant.onmicrosoft.com
+
+B2C policy name prefix (e.g., B2C_1A_).
+
+
+
+
+
+
+---
+
+Step 2: Define Claim Types in TrustFrameworkBase.xml
+
+Ensure the necessary claims for sign-in are defined.
+
+1. Open the TrustFrameworkBase.xml file.
+
+
+2. Add or ensure the following claim definitions exist for signInName and issuerAssignedId:
+
+<ClaimType Id="signInName">
+  <DisplayName>Sign In Name</DisplayName>
+  <DataType>string</DataType>
+  <DefaultPartnerClaimTypes>
+    <Protocol Name="OAuth2" PartnerClaimType="username" />
+  </DefaultPartnerClaimTypes>
+  <UserHelpText>The sign-in name used for logging in</UserHelpText>
+</ClaimType>
+
+<ClaimType Id="issuerAssignedId">
+  <DisplayName>Issuer Assigned ID</DisplayName>
+  <DataType>string</DataType>
+  <UserHelpText>The unique ID assigned by the issuer</UserHelpText>
+</ClaimType>
+
+
+
+
+---
+
+Step 3: Update TrustFrameworkExtensions.xml
+
+3.1 Modify the Sign-In Technical Profile
+
+1. Open TrustFrameworkExtensions.xml.
+
+
+2. Locate the LocalAccountSignIn or LocalAccountSignInUsingEmail technical profile.
+
+
+3. Update the technical profile to validate sign-ins using the identities property.
+
+Example:
+
+<TechnicalProfile Id="LocalAccountSignInUsingEmail">
+  <DisplayName>Local Account SignIn</DisplayName>
+  <Protocol Name="Proprietary" Handler="Web.TPEngine.Providers.LocalAccountProvider">
+    <Metadata>
+      <Item Key="Operation">Read</Item>
+      <Item Key="RaiseErrorIfClaimsPrincipalDoesNotExist">true</Item>
+    </Metadata>
+    <InputClaims>
+      <!-- Use issuerAssignedId for sign-in -->
+      <InputClaim ClaimTypeReferenceId="signInName" PartnerClaimType="identities[issuerAssignedId]" Required="true" />
+    </InputClaims>
+    <OutputClaims>
+      <OutputClaim ClaimTypeReferenceId="objectId" />
+      <OutputClaim ClaimTypeReferenceId="authenticationSource" />
+    </OutputClaims>
+    <ValidationTechnicalProfiles>
+      <ValidationTechnicalProfile ReferenceId="login-NonInteractive" />
+    </ValidationTechnicalProfiles>
+  </Protocol>
+</TechnicalProfile>
+
+
+
+3.2 Update Validation Technical Profile
+
+Ensure the login-NonInteractive technical profile is updated to handle issuerAssignedId and signInType for validation.
+
+Example:
+
+<TechnicalProfile Id="login-NonInteractive">
+  <Metadata>
+    <Item Key="UserMessageIfClaimsPrincipalDoesNotExist">An account could not be found for the provided sign-in identifier.</Item>
+    <Item Key="UserMessageIfInvalidPassword">Your password is incorrect.</Item>
+  </Metadata>
+  <InputClaims>
+    <InputClaim ClaimTypeReferenceId="signInName" PartnerClaimType="identities[issuerAssignedId]" Required="true" />
+    <InputClaim ClaimTypeReferenceId="password" Required="true" />
+  </InputClaims>
+  <OutputClaims>
+    <OutputClaim ClaimTypeReferenceId="objectId" />
+    <OutputClaim ClaimTypeReferenceId="displayName" />
+  </OutputClaims>
+</TechnicalProfile>
+
+
+---
+
+Step 4: Update the User Journey
+
+1. In TrustFrameworkExtensions.xml, locate the SignUpOrSignIn user journey.
+
+
+2. Ensure the signInName claim is used during the login step.
+
+Example:
+
+<OrchestrationStep Order="1" Type="CombinedSignInAndSignUp" ContentDefinitionReferenceId="api.signuporsignin">
+  <ClaimsExchange>
+    <ClaimsExchangeId>LocalAccountSigninExchange</ClaimsExchangeId>
+    <TechnicalProfileReferenceId>LocalAccountSignInUsingEmail</TechnicalProfileReferenceId>
+  </ClaimsExchange>
+</OrchestrationStep>
+
+
+
+
+---
+
+Step 5: Upload and Test Policies
+
+5.1 Upload Policies
+
+1. Go to Azure AD B2C > Identity Experience Framework > Upload custom policy.
+
+
+2. Upload the files in this order:
+
+TrustFrameworkBase.xml
+
+TrustFrameworkExtensions.xml
+
+Other policy files (e.g., SignUpOrSignIn.xml).
+
+
+
+
+5.2 Test Sign-In
+
+1. Navigate to the Run User Flow section.
+
+
+2. Test the custom policy by trying to sign in with a user whose identity has the identities property.
+
+
+
+
+---
+
+Step 6: Verify User Data
+
+Ensure users in your B2C tenant have the identities property configured. Use Microsoft Graph API to check.
+
+Example: Retrieve User Data
+
+GET https://graph.microsoft.com/v1.0/users?$filter=identities/any(c:c/issuerAssignedId eq 'user@example.com' and c/issuer eq 'yourtenant.onmicrosoft.com')
+
+Example User JSON
+
+{
+  "identities": [
+    {
+      "signInType": "emailAddress",
+      "issuer": "yourtenant.onmicrosoft.com",
+      "issuerAssignedId": "user@example.com"
+    }
+  ],
+  "displayName": "John Doe",
+  "accountEnabled": true
+}
+
+
+---
+
+Key Notes
+
+1. Use identities Property:
+
+issuerAssignedId: User's sign-in identifier (e.g., email or username).
+
+signInType: Type of sign-in (e.g., emailAddress, userName, etc.).
+
+
+
+2. Ensure Proper Claim Mapping:
+
+Map issuerAssignedId to signInName for seamless integration in your policy.
+
+
+
+3. Test Thoroughly:
+
+Verify that users can sign in using their issuerAssignedId with the specified signInType.
+
+
+
+
+
+---
+
+Let me know if you encounter any issues or need further clarification!
+
