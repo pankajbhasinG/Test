@@ -1,0 +1,136 @@
+To configure Azure AD B2C to authenticate users using signInNames (such as an email address, username, or phone number), you'll need to modify your Custom Policy. Here's how to set it up:
+
+
+---
+
+Steps to Update a Custom Policy for signInNames
+
+1. Download and Prepare Custom Policies
+
+If you haven't already downloaded and configured custom policies:
+
+1. Go to the Azure Portal > Azure AD B2C > Identity Experience Framework.
+
+
+2. Download the starter pack for custom policies (download link).
+
+
+3. Update the policies (TrustFrameworkBase.xml, TrustFrameworkExtensions.xml, etc.) with your Azure AD B2C tenant details.
+
+
+
+
+---
+
+2. Modify the TrustFrameworkExtensions.xml File
+
+This is the primary file where you configure how users authenticate.
+
+1. Locate the LocalAccountSignIn Technical Profile: In the TrustFrameworkExtensions.xml file, find the <TechnicalProfile Id="LocalAccountSignInUsingEmail">.
+
+It will look something like this:
+
+<TechnicalProfile Id="LocalAccountSignInUsingEmail">
+  <InputClaims>
+    <InputClaim ClaimTypeReferenceId="signInName" PartnerClaimType="signInName" Required="true" />
+  </InputClaims>
+  <OutputClaims>
+    <OutputClaim ClaimTypeReferenceId="objectId" />
+    <OutputClaim ClaimTypeReferenceId="authenticationSource" />
+  </OutputClaims>
+  <ValidationTechnicalProfiles>
+    <ValidationTechnicalProfile ReferenceId="login-NonInteractive" />
+  </ValidationTechnicalProfiles>
+</TechnicalProfile>
+
+
+2. Update InputClaim to Use signInNames: Modify or add the claim type to ensure the sign-in names attribute is being used.
+
+Example:
+
+<InputClaim ClaimTypeReferenceId="signInName" PartnerClaimType="signInName" Required="true" />
+
+
+3. Ensure SignIn Names are Configured in the User Journey: In the <UserJourney> section of the file (e.g., SignUpOrSignIn), make sure the signInName field is included in the steps.
+
+
+
+
+---
+
+3. Update the Claim Definitions
+
+Ensure the signInName claim is defined in the TrustFrameworkBase.xml or TrustFrameworkExtensions.xml file.
+
+Example:
+
+<ClaimType Id="signInName">
+  <DisplayName>Sign In Name</DisplayName>
+  <DataType>string</DataType>
+  <DefaultPartnerClaimTypes>
+    <Protocol Name="OAuth2" PartnerClaimType="username" />
+    <Protocol Name="OpenIdConnect" PartnerClaimType="username" />
+  </DefaultPartnerClaimTypes>
+  <UserHelpText>The sign-in name used for logging in</UserHelpText>
+</ClaimType>
+
+
+---
+
+4. Upload and Test Your Custom Policy
+
+1. Go to Azure AD B2C > Identity Experience Framework > Upload custom policy.
+
+
+2. Upload all your policy files (TrustFrameworkBase.xml, TrustFrameworkExtensions.xml, and SignUpOrSignIn.xml).
+
+
+3. Test the custom policy by running it in the Azure Portal.
+
+
+
+
+---
+
+5. Update User Data to Include signInNames
+
+For users to authenticate using signInNames, their data must include this attribute. Ensure users have the signInNames attribute populated when migrating them.
+
+Example Payload:
+
+{
+  "userPrincipalName": "user@yourtenant.onmicrosoft.com",
+  "signInNames": [
+    {
+      "type": "emailAddress",
+      "value": "user@example.com"
+    }
+  ],
+  "passwordProfile": {
+    "password": "TempPassword123!",
+    "forceChangePasswordNextSignIn": false
+  }
+}
+
+
+---
+
+6. Test Authentication with signInNames
+
+Navigate to your custom policy endpoint in Azure AD B2C (e.g., https://<yourtenant>.b2clogin.com/<yourtenant>.onmicrosoft.com/<policyname>).
+
+Try logging in with the signInName (email, username, etc.).
+
+
+
+---
+
+Notes
+
+If you encounter errors, check the Azure AD B2C logs under Audit Logs for troubleshooting.
+
+Ensure that your application is configured to use the correct policy in its authentication requests.
+
+
+Let me know if you need further assistance!
+
