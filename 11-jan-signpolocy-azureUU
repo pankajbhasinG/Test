@@ -1,0 +1,137 @@
+Yes, Azure AD B2C offers alternatives through the Azure Portal UI for simpler scenarios where custom policies are not required. However, the portal doesn't fully support managing sign-in based on the identities property directly (like issuerAssignedId or signInType). Instead, you can use Built-in User Flows with the following options:
+
+
+---
+
+Option 1: Use Built-in User Flows
+
+Built-in User Flows allow you to configure sign-in using standard identity providers like email, username, or phone number without custom policies.
+
+Steps:
+
+1. Go to Azure AD B2C in the Azure Portal.
+
+
+2. Select User Flows under Policies.
+
+
+3. Click + New user flow and choose the type (e.g., Sign up and sign in).
+
+
+4. Configure the Sign-in Method:
+
+Email Address: Allows users to sign in using their email.
+
+Username: Allows users to sign in using a username.
+
+
+
+
+Example User Flow Setup:
+
+1. Create a user flow with sign-in enabled for email or username.
+
+
+2. Assign the user flow to your application in the App registrations section.
+
+
+3. Test the user flow by accessing its endpoint.
+
+
+
+
+---
+
+Option 2: Use the UI to Add Users with Identities
+
+Although the portal UI doesn't directly expose identities, you can configure sign-in methods using email or username by populating the UserPrincipalName or email fields via the portal.
+
+Steps:
+
+1. Navigate to Azure AD B2C > Users.
+
+
+2. Click + New User.
+
+
+3. Fill in the following:
+
+Name: User's display name.
+
+User Principal Name (UPN): Use the desired email or username.
+
+Password: Temporary password.
+
+
+
+4. Users created this way can sign in using the email or UPN you set.
+
+
+
+
+---
+
+Option 3: Combine User Flows with Microsoft Graph API
+
+If you need to manage identities via the Graph API but want to keep user flows simple:
+
+1. Use the Microsoft Graph API to create or update users with the identities property.
+
+
+2. Use built-in Sign up and sign in user flows in Azure AD B2C for the actual sign-in process.
+
+
+
+Example Graph API Call for User Creation:
+
+POST https://graph.microsoft.com/v1.0/users
+Content-Type: application/json
+
+{
+  "accountEnabled": true,
+  "displayName": "John Doe",
+  "identities": [
+    {
+      "signInType": "emailAddress",
+      "issuer": "yourtenant.onmicrosoft.com",
+      "issuerAssignedId": "user@example.com"
+    }
+  ],
+  "passwordProfile": {
+    "forceChangePasswordNextSignIn": false,
+    "password": "TempPassword123!"
+  }
+}
+
+
+---
+
+Option 4: Enable Username Sign-In
+
+If you'd prefer username sign-ins over email:
+
+1. Go to your User Flow.
+
+
+2. Under the Identity providers section, select Local accounts.
+
+
+3. Choose Username as the primary sign-in option.
+
+
+
+
+---
+
+Key Limitations of Using the Portal UI
+
+The portal UI doesn't allow you to explicitly configure identities (issuerAssignedId or signInType).
+
+For advanced scenarios like migration of external users with multiple identities or custom claims, custom policies or the Microsoft Graph API are required.
+
+
+
+---
+
+If you're looking for a simpler setup and don't require identities, using built-in user flows is the best alternative. Let me know if you'd like detailed steps for setting up a user flow tailored to your needs!
+
