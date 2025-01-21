@@ -1,0 +1,160 @@
+If you've created a user via Microsoft Graph API and included the identities property (e.g., for external identities or authentication methods), and you're still seeing the "Password expired" message, here are steps to diagnose and resolve the issue:
+
+
+---
+
+1. Double-Check Your User Creation Request
+
+Ensure Correct passwordProfile and identities
+
+Here’s an example of creating a user with both passwordProfile and identities:
+
+POST https://graph.microsoft.com/v1.0/users
+Content-Type: application/json
+
+{
+  "accountEnabled": true,
+  "displayName": "John Doe",
+  "mailNickname": "johndoe",
+  "userPrincipalName": "johndoe@yourdomain.com",
+  "passwordProfile": {
+    "password": "TemporaryPassword123!",
+    "forceChangePasswordNextSignIn": true
+  },
+  "passwordPolicies": "DisablePasswordExpiration",
+  "identities": [
+    {
+      "signInType": "emailAddress",
+      "issuer": "yourdomain.com",
+      "issuerAssignedId": "johndoe@yourdomain.com"
+    }
+  ]
+}
+
+Key Details:
+
+forceChangePasswordNextSignIn must be true to enforce the password change at first login.
+
+passwordPolicies should not conflict (e.g., avoid using "DisableStrongPassword" unless required).
+
+identities should properly align with your sign-in type (e.g., emailAddress, userPrincipalName).
+
+
+
+---
+
+2. Diagnose the Issue
+
+Run through these troubleshooting steps to identify what might be causing the behavior:
+
+A. Check User Properties
+
+Use the Get User API to verify the user’s attributes post-creation:
+
+GET https://graph.microsoft.com/v1.0/users/{userId}
+
+Look for:
+
+passwordProfile.forceChangePasswordNextSignIn set to true.
+
+No conflicting passwordPolicies (e.g., "DisablePasswordExpiration" should not block the password reset flow).
+
+
+B. Review Azure AD Sign-In Logs
+
+1. Go to Azure AD > Sign-ins in the Azure portal.
+
+
+2. Look for the failed login attempt for the user.
+
+
+3. Review error messages or policy blocks.
+
+
+
+C. Test with Minimal User Properties
+
+Create a simple test user without identities to rule out conflicts:
+
+{
+  "accountEnabled": true,
+  "displayName": "Test User",
+  "userPrincipalName": "testuser@yourdomain.com",
+  "passwordProfile": {
+    "password": "TemporaryPassword123!",
+    "forceChangePasswordNextSignIn": true
+  }
+}
+
+If this works, the issue might be with the identities configuration.
+
+
+---
+
+3. Resolve "Password Expired" Behavior
+
+If the issue persists even with proper configuration:
+
+A. Update User Password Profile
+
+Force a password update to ensure the correct forceChangePasswordNextSignIn setting:
+
+PATCH https://graph.microsoft.com/v1.0/users/{userId}
+Content-Type: application/json
+
+{
+  "passwordProfile": {
+    "password": "NewTemporaryPassword123!",
+    "forceChangePasswordNextSignIn": true
+  }
+}
+
+B. Verify Password Policy in Azure AD
+
+1. Go to Azure AD > Users > Password Reset.
+
+
+2. Check if your organization enforces Password Expiration or Custom Password Rules that could interfere.
+
+
+
+C. Check Conditional Access Policies
+
+Ensure no policies are blocking sign-in or requiring additional steps.
+
+
+---
+
+4. Other Considerations for identities
+
+If you are using identities, ensure:
+
+The signInType matches the method users will use to log in (e.g., emailAddress for email logins).
+
+The issuer matches your Azure AD tenant domain.
+
+No conflicting settings exist between the identities and passwordProfile.
+
+
+
+---
+
+5. Advanced Debugging
+
+If none of the above resolves the issue:
+
+1. Check for Directory Sync Issues if using Hybrid Azure AD.
+
+
+2. Use PowerShell to query or modify the user:
+
+Get-AzureADUser -ObjectId <UserPrincipalName>
+Set-AzureADUserPassword -ObjectId <UserPrincipalName> -Password "AnotherTempPassword123!" -ForceChangePasswordNextLogin $true
+
+
+
+
+---
+
+Let me know how it goes or if you'd like help troubleshooting logs!
+
