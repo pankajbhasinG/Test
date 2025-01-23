@@ -1,0 +1,137 @@
+In Azure AD B2C, to implement a change password prompt, you need to ensure that appropriate permissions and policies are configured to allow users to reset or change their passwords. Here are the details of permissions and setup required:
+
+
+---
+
+1. Required Azure AD B2C Permissions
+
+Delegated Permissions
+
+User.Read
+Allows the application to read the signed-in user's profile.
+
+User.ReadWrite
+Allows the application to update the user's profile, including passwords.
+
+
+Application Permissions
+
+Directory.ReadWrite.All
+Grants the application permission to read and write data in the directory, including resetting user passwords.
+
+
+Grant Admin Consent
+
+After assigning the permissions:
+
+1. Navigate to Azure AD B2C > App Registrations.
+
+
+2. Select your application and go to API Permissions.
+
+
+3. Click Grant admin consent to enable these permissions.
+
+
+
+
+---
+
+2. User Flow or Custom Policy for Password Change
+
+Azure AD B2C requires either a built-in user flow or a custom policy to handle password change scenarios.
+
+Built-In User Flow for Password Reset
+
+1. Go to Azure AD B2C in the Azure Portal.
+
+
+2. Navigate to User Flows.
+
+
+3. Create or select a Password Reset flow:
+
+Choose the flow type Reset password.
+
+Add the required identity providers (e.g., email, phone, etc.).
+
+Configure the page layout if needed.
+
+
+
+4. Use this flow URL in your application:
+
+Example:
+
+https://<tenant-name>.b2clogin.com/<tenant-name>.onmicrosoft.com/<policy-name>/oauth2/v2.0/authorize
+
+
+
+
+Custom Policy for Password Change
+
+If you need a more advanced scenario (e.g., integrated password change prompts during login):
+
+1. Create a custom policy XML file with the Password Reset journey.
+
+
+2. Include the <TechnicalProfile Id="SelfAsserted-ChangePasswordUsingObjectId"> for changing passwords.
+
+
+3. Upload the custom policy files in Azure AD B2C > Identity Experience Framework.
+
+
+
+
+---
+
+3. Application Configuration
+
+Ensure the application calling the password change flow:
+
+Redirects users to the Password Reset User Flow or Custom Policy URL.
+
+Handles tokens post-reset correctly.
+
+
+
+---
+
+4. Additional Configuration for Force Password Change
+
+If you want users to be forced to change their password:
+
+1. Set the forceChangePasswordNextSignIn property via the Graph API or Azure AD PowerShell:
+
+PATCH https://graph.microsoft.com/v1.0/users/<userPrincipalName>
+Content-Type: application/json
+Authorization: Bearer <TOKEN>
+
+{
+  "passwordProfile": {
+    "forceChangePasswordNextSignIn": true
+  }
+}
+
+
+2. Ensure the app redirects the user to the B2C password reset flow upon sign-in.
+
+
+
+
+---
+
+5. Common Errors and Resolutions
+
+Permission Denied:
+Ensure API permissions are granted with admin consent.
+
+No Redirect to Password Change Flow:
+Double-check the app's login/logout URLs and ensure it points to the B2C user flow or custom policy endpoint.
+
+
+
+---
+
+Let me know if you’d like assistance configuring any of these steps!
+
