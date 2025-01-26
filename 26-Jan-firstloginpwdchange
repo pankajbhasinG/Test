@@ -1,0 +1,188 @@
+The forceChangePasswordNextSignIn attribute is specific to Azure Active Directory (AAD) for managing password resets for standard users. However, in Azure AD B2C, this feature works differently because B2C is designed for customer identity scenarios. Here's how to handle password changes for first login in Azure AD B2C when the forceChangePasswordNextSignIn attribute isn't visible:
+
+
+---
+
+Steps to Enable Password Change on First Login in Azure AD B2C
+
+1. Configure "Password Reset" in the User Flow
+
+Azure AD B2C doesn’t directly support the forceChangePasswordNextSignIn attribute. Instead, you can configure a user flow or custom policy to require the user to reset their password.
+
+1. Go to User Flows:
+
+Navigate to Azure AD B2C > User Flows.
+
+Select the Sign Up and Sign In flow or create a new one.
+
+
+
+2. Enable Password Reset:
+
+In the user flow properties, ensure that the Password Reset option is enabled.
+
+If it's not enabled, click Edit in the page layouts section and toggle Password Reset to On.
+
+
+
+3. Test the User Flow:
+
+Create a test user.
+
+Attempt to log in with the test user and verify that the password reset flow works as expected.
+
+
+
+
+
+---
+
+2. Use a Custom Attribute for First Login
+
+If you need a user to change their password on their first login, you can use a custom attribute in Azure AD B2C to track whether the password has been updated.
+
+1. Create a Custom Attribute:
+
+Go to Azure AD B2C > User Attributes.
+
+Add a new attribute, e.g., firstLogin, of type Boolean.
+
+
+
+2. Modify the User Flow or Custom Policy:
+
+Add logic to check the value of firstLogin during the authentication process.
+
+
+Example in a Custom Policy:
+
+<OrchestrationStep Order="2" Type="ClaimsExchange">
+  <Preconditions>
+    <Precondition Type="ClaimEquals" ExecuteActionsIf="false">
+      <Value>firstLogin</Value>
+      <Value>True</Value>
+      <Action>SkipThisOrchestrationStep</Action>
+    </Precondition>
+  </Preconditions>
+  <ClaimsExchanges>
+    <ClaimsExchange Id="PasswordReset" TechnicalProfileReferenceId="SelfAsserted-PasswordReset" />
+  </ClaimsExchanges>
+</OrchestrationStep>
+
+
+3. Set firstLogin for New Users:
+
+When creating a user, set the firstLogin attribute to true.
+
+Once the user completes the password change, update the attribute to false.
+
+
+
+
+
+---
+
+3. Implement Password Reset During First Login
+
+1. Set a Temporary Password for the User:
+
+Create the user with a temporary password and share it with them.
+
+
+
+2. Redirect Users to a Password Reset Flow:
+
+Instruct users to navigate directly to a Password Reset flow upon their first login attempt.
+
+Use the Password Reset user flow for this purpose.
+
+
+
+3. Link Password Reset to the Login Flow:
+
+Configure your application to detect if the user needs a password reset (via a custom attribute or a failed login) and redirect them to the password reset flow.
+
+
+
+
+
+---
+
+4. Force Password Change via API
+
+If you need a backend approach to enforce a password reset, you can use the Microsoft Graph API to manage users.
+
+1. Update User’s PasswordPolicies:
+
+Use Microsoft Graph API to set the user's password policies and temporary password.
+
+
+Example API Request:
+
+PATCH https://graph.microsoft.com/v1.0/users/{user-id}
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "passwordPolicies": "DisablePasswordExpiration",
+  "passwordProfile": {
+    "forceChangePasswordNextSignIn": true,
+    "password": "TemporaryPassword123!"
+  }
+}
+
+
+2. Create a Service Principal for API Calls:
+
+If you don’t already have a service principal, register an app in Azure AD, grant it the User.ReadWrite.All permission, and use it to make API calls.
+
+
+
+
+
+---
+
+5. Use Application Logic for First Login
+
+In your application, you can implement logic to force a password change for first login:
+
+1. Check a User Attribute (e.g., firstLogin):
+
+Query the user's attributes after login.
+
+If firstLogin = true, redirect them to the password reset flow.
+
+
+
+2. Redirect to Password Reset:
+
+In the application, redirect users to the password reset URL if the condition is met:
+
+https://<your-tenant-name>.b2clogin.com/<your-tenant-id>/oauth2/v2.0/authorize?p=your-password-reset-policy
+
+
+
+
+
+---
+
+6. Testing
+
+1. Create a test user with the firstLogin attribute set to true.
+
+
+2. Attempt to log in as the test user.
+
+
+3. Verify that the user is prompted to reset their password.
+
+
+4. Once the password is reset, ensure the firstLogin attribute is updated to false.
+
+
+
+
+---
+
+Let me know if you'd like detailed assistance with any specific step or configuration!
+
