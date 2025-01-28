@@ -1,0 +1,143 @@
+To check for an email in both the mail field and identities (e.g., external or other associated emails), you can query the Azure AD B2C identities or other properties like identities.
+
+Azure AD uses the identities collection to store multiple identities, such as emails from external providers. Here’s how to check both mail, userPrincipalName, and identities.
+
+
+---
+
+Updated Code (Including Identities)
+
+using Microsoft.Graph;
+using Azure.Identity;
+using System.Linq;
+using System;
+
+class Program
+{
+    static async Task Main(string[] args)
+    {
+        // Azure AD App details
+        var clientId = "YOUR_CLIENT_ID";
+        var tenantId = "YOUR_TENANT_ID";
+        var clientSecret = "YOUR_CLIENT_SECRET";
+
+        // Authenticate using ClientSecretCredential
+        var credential = new ClientSecretCredential(tenantId, clientId, clientSecret);
+
+        // Initialize GraphServiceClient
+        var graphClient = new GraphServiceClient(credential);
+
+        // Email to check
+        var emailToCheck = "user@example.com";
+
+        try
+        {
+            // Query Azure AD users
+            var users = await graphClient.Users
+                .Request()
+                .Filter($"mail eq '{emailToCheck}' or userPrincipalName eq '{emailToCheck}'")
+                .GetAsync();
+
+            // Check identities if no direct match is found
+            if (users.CurrentPage.Any())
+            {
+                Console.WriteLine($"Email found in mail or userPrincipalName: {emailToCheck}");
+            }
+            else
+            {
+                // Fetch all users and check their identities (fallback)
+                var allUsers = await graphClient.Users
+                    .Request()
+                    .Select("id,displayName,identities") // Fetch only relevant fields
+                    .GetAsync();
+
+                var matchedUser = allUsers.CurrentPage.FirstOrDefault(user =>
+                    user.Identities != null && user.Identities.Any(identity => identity.IssuerAssignedId == emailToCheck));
+
+                if (matchedUser != null)
+                {
+                    Console.WriteLine($"Email found in identities: {emailToCheck}");
+                }
+                else
+                {
+                    Console.WriteLine($"Email does not exist: {emailToCheck}");
+                }
+            }
+        }
+        catch (ServiceException ex)
+        {
+            Console.WriteLine($"Error: {ex.Message}");
+        }
+    }
+}
+
+
+---
+
+Key Points:
+
+1. Primary Search:
+
+The $filter query checks mail and userPrincipalName.
+
+This is efficient as it only queries specific fields.
+
+
+
+2. Fallback Search:
+
+If no direct match is found, fetch identities (e.g., external emails like Gmail, Microsoft accounts).
+
+Use Select("id,displayName,identities") to limit the fields retrieved for better performance.
+
+
+
+3. Check Identities Field:
+
+Identities is a collection where each entry includes:
+
+Issuer: The identity provider (e.g., local, google.com).
+
+IssuerAssignedId: The email or username for that provider.
+
+
+
+
+
+
+---
+
+Azure AD Permissions:
+
+User.Read.All is required for accessing users and their identities.
+
+Grant admin consent for application-level permissions.
+
+
+
+---
+
+Debugging Tips:
+
+Use Graph Explorer to test the /users API:
+
+Query: https://graph.microsoft.com/v1.0/users?$select=id,identities
+
+
+Log each user's identities to ensure the email is checked:
+
+foreach (var user in allUsers.CurrentPage)
+{
+    Console.WriteLine($"User: {user.DisplayName}");
+    if (user.Identities != null)
+    {
+        foreach (var identity in user.Identities)
+        {
+            Console.WriteLine($"Identity: {identity.IssuerAssignedId}, Issuer: {identity.Issuer}");
+        }
+    }
+}
+
+
+Let me know if you need further clarification!
+
