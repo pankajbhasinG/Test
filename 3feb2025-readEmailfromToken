@@ -1,0 +1,91 @@
+If you're working with a .NET Core API and need to extract the user's email from the JWT token, follow these steps:
+
+
+---
+
+1. Configure Authentication in Program.cs
+
+Ensure your API is set up to use JWT authentication.
+
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = "your_issuer",
+            ValidAudience = "your_audience",
+            IssuerSigningKey = new SymmetricSecurityKey(System.Text.Encoding.UTF8.GetBytes("your_secret_key"))
+        };
+    });
+
+builder.Services.AddAuthorization();
+builder.Services.AddControllers();
+
+var app = builder.Build();
+
+app.UseAuthentication();
+app.UseAuthorization();
+
+app.MapControllers();
+
+app.Run();
+
+
+---
+
+2. Extract User Email in Controller
+
+In your API controller, extract the email from the claims inside an authenticated endpoint.
+
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using System.Linq;
+using System.Security.Claims;
+
+[ApiController]
+[Route("api/[controller]")]
+public class UserController : ControllerBase
+{
+    [Authorize] // Ensures only authenticated users can access this endpoint
+    [HttpGet("email")]
+    public IActionResult GetUserEmail()
+    {
+        var email = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Email)?.Value;
+
+        if (string.IsNullOrEmpty(email))
+        {
+            return BadRequest("Email claim not found.");
+        }
+
+        return Ok(new { Email = email });
+    }
+}
+
+
+---
+
+3. Test the API
+
+Make sure you're sending a valid JWT token in the Authorization Header like this:
+
+
+Authorization: Bearer YOUR_JWT_TOKEN
+
+If the token contains an email claim, the API will return:
+
+
+{
+    "Email": "user@example.com"
+}
+
+Let me know if you need any modifications!
+
