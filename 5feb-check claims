@@ -1,0 +1,151 @@
+If you're getting "Claims: 0" (empty claims) in your ASP.NET Core API when verifying an Azure B2C token, follow these steps to debug and fix it:
+
+
+---
+
+1. Decode and Verify Your Token
+
+Copy your JWT token and paste it into jwt.io.
+
+Check if the payload section contains claims like:
+
+{
+  "oid": "1234-abcd-5678-efgh",
+  "sub": "abcd-1234-efgh-5678",
+  "name": "Pankaj Bhasin",
+  "email": "pankaj@example.com"
+}
+
+If claims are missing:
+
+Ensure you're requesting the correct scopes when getting the token from Azure B2C.
+
+
+
+
+---
+
+2. Update TokenValidationParameters
+
+If your token has claims but ASP.NET Core doesn't recognize them, modify Program.cs to explicitly include claim mappings:
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.Authority = "https://yourtenant.b2clogin.com/yourtenant.onmicrosoft.com/v2.0/";
+        options.Audience = "your-client-id";
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = "https://yourtenant.b2clogin.com/{tenant-id}/v2.0/",
+            ValidAudience = "your-client-id",
+            RoleClaimType = "roles",  // Map role claims correctly
+            NameClaimType = "name"     // Ensure name claim is available
+        };
+    });
+
+ValidAudience must match your Azure AD B2C App's Client ID.
+
+NameClaimType and RoleClaimType ensure claims are correctly mapped.
+
+
+
+---
+
+3. Check API Permissions in Azure B2C
+
+1. Go to Azure Portal → Azure AD B2C → App Registrations.
+
+
+2. Select your API App Registration.
+
+
+3. Go to "API Permissions" → Ensure it has "openid", "profile", and "email" scopes.
+
+
+4. If missing, click "Add Permissions" and assign these.
+
+
+
+
+---
+
+4. Log Claims in the Controller
+
+Modify your API to log all claims and see what's being received:
+
+[HttpGet("test")]
+public IActionResult Test()
+{
+    var user = HttpContext.User;
+    if (!user.Identity.IsAuthenticated)
+    {
+        return Unauthorized("User is not authenticated");
+    }
+
+    var claims = user.Claims.Select(c => new { c.Type, c.Value }).ToList();
+
+    if (claims.Count == 0)
+    {
+        return BadRequest("No claims found in token.");
+    }
+
+    return Ok(claims);
+}
+
+Call /test with your B2C token in Postman (Authorization: Bearer YOUR_TOKEN).
+
+If it returns "No claims found in token", check Step 1 & 2.
+
+
+
+---
+
+5. Ensure Token Contains Claims via B2C Policy
+
+If your token doesn't have claims, update your Azure B2C User Flow:
+
+1. Go to Azure AD B2C → User Flows.
+
+
+2. Select your SignUpSignIn Policy (or any relevant policy).
+
+
+3. Go to Application Claims and enable:
+
+email
+
+givenName
+
+surname
+
+objectId
+
+roles (if using roles).
+
+
+
+4. Save and run the user flow again to get a new token.
+
+
+
+
+---
+
+Final Steps
+
+1. Decode token at jwt.io → Ensure claims exist.
+
+
+2. Modify TokenValidationParameters in Program.cs.
+
+
+3. Enable claims in Azure B2C policy.
+
+
+4. Log claims in API to debug missing values.
+
+
+
+Try these and let me know if claims are still missing!
+
