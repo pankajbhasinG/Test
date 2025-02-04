@@ -1,0 +1,316 @@
+To call an API with a token via Postman, follow these steps:
+
+1. Open Postman
+
+Launch Postman on your system.
+
+2. Select HTTP Method
+
+Choose GET, POST, PUT, DELETE, or any other method as per API requirements.
+
+Enter the API URL in the request bar.
+
+
+3. Add Authorization Token
+
+Option 1: Using Authorization Tab (Recommended)
+
+1. Go to the Authorization tab.
+
+
+2. Select Bearer Token in the Type dropdown.
+
+
+3. Paste your token in the Token field.
+
+
+
+Option 2: Using Headers (Alternative)
+
+1. Go to the Headers tab.
+
+
+2. Add a new key: Authorization
+
+
+3. Set the value as:
+
+Bearer YOUR_TOKEN_HERE
+
+
+
+4. Add Request Body (For POST, PUT)
+
+If your API requires data, go to the Body tab.
+
+Select raw and choose JSON as the format.
+
+Enter the request payload in JSON format, e.g.:
+
+{
+  "name": "Pankaj",
+  "email": "pankaj@example.com"
+}
+
+
+5. Send Request
+
+Click Send and check the response.
+
+Let me know if you need further details!
+
+
+******
+
+
+To debug "User identity false with no claims" when calling an API with a token in Postman, follow these steps:
+
+
+---
+
+Step 1: Decode the Token
+
+Use jwt.io to decode the token.
+
+Copy and paste your JWT token into the decoder.
+
+Check if the payload contains expected claims (e.g., sub, role, email).
+
+If the claims are missing, your token may not be generated correctly.
+
+
+
+---
+
+Step 2: Verify Token in Postman
+
+1. Go to Headers in Postman.
+
+
+2. Ensure you have the correct authorization header:
+
+Authorization: Bearer YOUR_TOKEN_HERE
+
+
+3. If your API expects a custom header, check the API documentation. Some APIs require headers like:
+
+x-api-key: YOUR_API_KEY
+
+
+
+
+---
+
+Step 3: Check API Authentication Setup in ASP.NET Core
+
+If you are using ASP.NET Core, check your authentication configuration:
+
+🔹 Ensure Authentication Middleware is Configured
+
+In Program.cs or Startup.cs, make sure authentication is added:
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.Authority = "https://your-auth-server.com";
+        options.Audience = "your-api-resource";
+    });
+
+🔹 Verify Claims Extraction
+
+In your API controller, try logging claims:
+
+[Authorize]
+[HttpGet("test")]
+public IActionResult Test()
+{
+    var user = HttpContext.User;
+    if (!user.Identity.IsAuthenticated)
+    {
+        return Unauthorized("User is not authenticated");
+    }
+
+    var claims = user.Claims.Select(c => new { c.Type, c.Value }).ToList();
+    return Ok(claims);
+}
+
+If user.Claims is empty, the token is either invalid or not containing claims.
+
+
+
+---
+
+Step 4: Generate a New Token
+
+Try generating a fresh valid token from your authentication provider and test again in Postman.
+
+
+---
+
+Still Not Working?
+
+1. Are you using an identity provider (Auth0, IdentityServer, Firebase, etc.)?
+
+
+2. What API framework are you using (ASP.NET Core, Node.js, etc.)?
+
+
+3. What is your authentication setup in your API?
+
+
+
+Let me know these details, and I'll guide you further!
+
+*******
+
+
+If you don't use the [Authorize] attribute in your ASP.NET Core API, your API won't require authentication, meaning anyone can access the endpoints.
+
+However, if you still want to verify the Azure B2C token manually, you can do it inside the controller or middleware.
+
+
+---
+
+1. Manually Extract and Validate Token in Controller
+
+If you remove [Authorize], you can manually check the token inside the controller:
+
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
+using System.Linq;
+using System.Security.Claims;
+
+[ApiController]
+[Route("[controller]")]
+public class SecureController : ControllerBase
+{
+    [HttpGet("verify-token")]
+    public IActionResult VerifyToken()
+    {
+        var authHeader = Request.Headers["Authorization"].ToString();
+        if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer "))
+        {
+            return Unauthorized("Missing or invalid token");
+        }
+
+        var token = authHeader.Replace("Bearer ", "");
+
+        var handler = new JwtSecurityTokenHandler();
+        var jwtToken = handler.ReadToken(token) as JwtSecurityToken;
+
+        if (jwtToken == null)
+        {
+            return Unauthorized("Invalid token");
+        }
+
+        var claims = jwtToken.Claims.Select(c => new { c.Type, c.Value }).ToList();
+        return Ok(claims);
+    }
+}
+
+How It Works:
+
+Extracts the token from the Authorization header.
+
+Parses the JWT token and extracts claims.
+
+Returns the claims as a response.
+
+
+
+---
+
+2. Verify Token in Middleware (Recommended)
+
+If you want to verify the token globally but without using [Authorize], you can create custom middleware:
+
+Create TokenValidationMiddleware.cs
+
+using Microsoft.AspNetCore.Http;
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+
+public class TokenValidationMiddleware
+{
+    private readonly RequestDelegate _next;
+
+    public TokenValidationMiddleware(RequestDelegate next)
+    {
+        _next = next;
+    }
+
+    public async Task Invoke(HttpContext context)
+    {
+        var authHeader = context.Request.Headers["Authorization"].FirstOrDefault();
+        if (authHeader != null && authHeader.StartsWith("Bearer "))
+        {
+            var token = authHeader.Substring(7); // Remove "Bearer " prefix
+
+            var handler = new JwtSecurityTokenHandler();
+            var jwtToken = handler.ReadToken(token) as JwtSecurityToken;
+
+            if (jwtToken != null)
+            {
+                var identity = new ClaimsIdentity(jwtToken.Claims);
+                context.User = new ClaimsPrincipal(identity);
+            }
+        }
+
+        await _next(context);
+    }
+}
+
+Register Middleware in Program.cs
+
+var app = builder.Build();
+app.UseMiddleware<TokenValidationMiddleware>(); // Add this line
+app.UseAuthentication();
+app.UseAuthorization();
+app.MapControllers();
+app.Run();
+
+How It Works:
+
+Middleware intercepts requests before reaching controllers.
+
+Extracts token from the header.
+
+Decodes JWT token and adds claims to HttpContext.User.
+
+
+
+---
+
+3. Call API in Postman (Without [Authorize])
+
+1. Open Postman.
+
+
+2. Send a GET request to /secure/verify-token with:
+
+Authorization: Bearer YOUR_B2C_ACCESS_TOKEN
+
+
+3. The response will contain the decoded claims.
+
+
+
+
+---
+
+Conclusion
+
+Without [Authorize], anyone can call the API unless you manually verify the token.
+
+Using middleware lets you validate tokens globally while keeping endpoints open.
+
+Manually extracting claims in the controller works but is not scalable for large applications.
+
+
+Let me know if you need further clarification!
+
+
