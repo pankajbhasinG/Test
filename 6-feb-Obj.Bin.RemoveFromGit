@@ -1,0 +1,24 @@
+The obj and bin folders contain compiled binaries and temporary files that should not be tracked in Git. If they're showing up in your Git changes, follow these steps to ignore them properly:
+
+1. Add to .gitignore
+
+Make sure your repository has a .gitignore file. If it doesn't, create one in the root of your project and add the following lines:
+
+# Ignore build output
+bin/
+obj/
+
+2. Remove Already Tracked Files
+
+If Git is already tracking these files, simply adding them to .gitignore won't remove them. You need to untrack them with:
+
+git rm -r --cached bin obj
+git commit -m "Removed bin and obj from tracking"
+git push origin <your-branch>
+
+3. Verify
+
+Run git status again. The bin and obj folders should no longer appear in the changes.
+
+Let me know if you need more help!
+
