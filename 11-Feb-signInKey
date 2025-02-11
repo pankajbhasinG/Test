@@ -1,0 +1,79 @@
+If you're getting a "Signature key was not found" error while verifying Azure B2C tokens in ASP.NET Core, it usually means that your app is unable to retrieve the public signing keys (JWKs) from Azure AD B2C. Here are some common reasons and solutions:
+
+
+---
+
+1. Ensure the Correct Authority URL
+
+Make sure the Authority URL in your Program.cs matches your Azure B2C tenant and policy:
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.Authority = "https://yourtenant.b2clogin.com/yourtenant.onmicrosoft.com/B2C_1A_SIGNUP_SIGNIN/v2.0";
+        options.Audience = "your-client-id";
+        options.RequireHttpsMetadata = false;
+    });
+
+🔹 Replace yourtenant and B2C_1A_SIGNUP_SIGNIN with your actual tenant name and user flow policy.
+🔹 Ensure that the URL follows this format:
+
+https://yourtenant.b2clogin.com/yourtenant.onmicrosoft.com/{policy}/v2.0
+
+
+---
+
+2. Check the Well-Known JWKS Endpoint
+
+Azure B2C exposes public keys at this endpoint:
+
+https://yourtenant.b2clogin.com/yourtenant.onmicrosoft.com/{policy}/v2.0/.well-known/openid-configuration
+
+1. Open this URL in your browser.
+
+
+2. Look for the "jwks_uri" field (it should point to another URL).
+
+
+3. Open that URL and check if the keys are being served.
+
+
+
+If this endpoint is not reachable, your app won't be able to verify the token's signature.
+
+
+---
+
+3. Ensure the Token is from the Correct Issuer
+
+Your token should be issued by Azure B2C and match the expected issuer in the OpenID metadata.
+You can extract the token and check the "iss" claim using jwt.ms:
+🔗 https://jwt.ms
+
+If the issuer in the token does not match the one from openid-configuration, the validation will fail.
+
+
+---
+
+4. Enable Automatic Key Rotation
+
+Azure B2C rotates signing keys periodically. Ensure that your app can automatically fetch them:
+
+options.TokenValidationParameters = new TokenValidationParameters
+{
+    ValidateIssuerSigningKey = true,
+    ValidateIssuer = true,
+    ValidateAudience = true,
+    ValidateLifetime = true,
+    IssuerSigningKeyResolver = (token, securityToken, kid, parameters) =>
+    {
+        var httpClient = new HttpClient();
+        var keySetUrl = "https://yourtenant.b2clogin.com/yourtenant.onmicrosoft.com/{policy}/v2.0/discovery/keys";
+        var response = httpClient.GetStringAsync(keySetUrl).Result;
+        var keys = JsonWebKeySet.Create(response);
+        return keys.Keys;
+    }
+};
+
+This allows your
+
