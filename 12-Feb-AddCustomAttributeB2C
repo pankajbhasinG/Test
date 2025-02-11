@@ -1,0 +1,259 @@
+Adding custom attributes in Azure AD B2C and retrieving them using Microsoft Graph API involves multiple steps. Below is a step-by-step guide to help you achieve this.
+
+
+---
+
+Step 1: Register an App in Azure AD B2C
+
+First, you need to register an application that will have the necessary permissions to interact with Microsoft Graph.
+
+1.1. Go to Azure AD B2C Portal
+
+1. Open the Azure Portal: https://portal.azure.com
+
+
+2. Navigate to Azure AD B2C.
+
+
+
+1.2. Register a New Application
+
+1. Under Manage, click App registrations → New registration.
+
+
+2. Enter a Name (e.g., GraphAPIClient).
+
+
+3. Select Accounts in any identity provider or organizational directory (for authentication using Azure AD B2C).
+
+
+4. Click Register.
+
+
+
+1.3. Grant API Permissions
+
+1. After registration, go to API permissions → Add a permission.
+
+
+2. Select Microsoft Graph → Application permissions.
+
+
+3. Search for and add the following permissions:
+
+User.ReadWrite.All
+
+Directory.ReadWrite.All
+
+
+
+4. Click Grant admin consent.
+
+
+
+1.4. Create a Client Secret
+
+1. Go to Certificates & secrets → New client secret.
+
+
+2. Provide a description and expiration time.
+
+
+3. Click Add, then copy the secret value (you'll need it later).
+
+
+
+
+---
+
+Step 2: Add a Custom Attribute in Azure B2C
+
+Azure AD B2C stores custom attributes as extension properties.
+
+2.1. Create a Custom Attribute
+
+1. In Azure AD B2C, go to User attributes (under Manage).
+
+
+2. Click Add.
+
+
+3. Enter an attribute name (e.g., Role).
+
+
+4. Select String as the data type.
+
+
+5. Click Create.
+
+
+
+After creation, Azure AD B2C automatically prefixes the attribute with extension_ when used in Microsoft Graph.
+
+For example, if you create Role, the actual attribute key will be:
+
+extension_<B2C-EXTENSION-APP-ID>_Role
+
+
+---
+
+Step 3: Find the Extension App ID
+
+Each B2C tenant has a special B2C Extensions App that manages custom attributes.
+
+3.1. Find the B2C Extension App ID
+
+1. Go to Azure AD B2C → App registrations.
+
+
+2. Search for an app named b2c-extensions-app.
+
+
+3. Open the app and copy the Application (client) ID.
+
+
+4. The extension_<B2C-EXTENSION-APP-ID>_Role format uses this ID.
+
+
+
+Example: If the B2C Extension App ID is 1234abcd-5678-efgh-ijkl-9876mnopqrst, the attribute name will be:
+
+extension_1234abcd5678efghijkl9876mnopqrst_Role
+
+
+---
+
+Step 4: Create a User with a Custom Attribute using Microsoft Graph
+
+Now that we have the custom attribute, we can create a user with it.
+
+4.1. Install Microsoft Graph SDK (if not already installed)
+
+Run the following command in your project:
+
+dotnet add package Microsoft.Graph
+
+4.2. C# Code to Create a User with Custom Attribute
+
+using Microsoft.Graph;
+using Microsoft.Identity.Client;
+using System;
+using System.Net.Http.Headers;
+using System.Threading.Tasks;
+
+class Program
+{
+    static async Task Main()
+    {
+        var clientId = "your-client-id"; // From App Registration
+        var clientSecret = "your-client-secret"; // From Client Secret
+        var tenantId = "yourtenant.onmicrosoft.com"; // Your B2C Tenant
+        var extensionAppId = "your-extension-app-id"; // B2C Extensions App ID
+
+        var scopes = new[] { "https://graph.microsoft.com/.default" };
+
+        IConfidentialClientApplication confidentialClientApp = ConfidentialClientApplicationBuilder
+            .Create(clientId)
+            .WithClientSecret(clientSecret)
+            .WithAuthority($"https://login.microsoftonline.com/{tenantId}")
+            .Build();
+
+        var authResult = await confidentialClientApp.AcquireTokenForClient(scopes).ExecuteAsync();
+        var graphClient = new GraphServiceClient(new DelegateAuthenticationProvider(requestMessage =>
+        {
+            requestMessage.Headers.Authorization = new AuthenticationHeaderValue("Bearer", authResult.AccessToken);
+            return Task.CompletedTask;
+        }));
+
+        var user = new User
+        {
+            GivenName = "John",
+            Surname = "Doe",
+            DisplayName = "John Doe",
+            MailNickname = "johndoe",
+            UserPrincipalName = "johndoe@yourtenant.onmicrosoft.com",
+            Mail = "johndoe@example.com",
+            PasswordProfile = new PasswordProfile
+            {
+                ForceChangePasswordNextSignIn = false,
+                Password = "P@ssw0rd123"
+            },
+            PasswordPolicies = "DisablePasswordExpiration",
+            Identities = new List<ObjectIdentity>
+            {
+                new ObjectIdentity
+                {
+                    SignInType = "emailAddress",
+                    Issuer = "yourtenant.onmicrosoft.com",
+                    IssuerAssignedId = "johndoe@example.com"
+                }
+            },
+            AdditionalData = new Dictionary<string, object>
+            {
+                { $"extension_{extensionAppId}_Role", "Admin" } // Assigning Role
+            }
+        };
+
+        try
+        {
+            var createdUser = await graphClient.Users
+                .Request()
+                .AddAsync(user);
+
+            Console.WriteLine($"User created with ID: {createdUser.Id}");
+        }
+        catch (ServiceException ex)
+        {
+            Console.WriteLine($"Error creating user: {ex.Message}");
+        }
+    }
+}
+
+
+---
+
+Step 5: Retrieve the User and Custom Attribute via Microsoft Graph
+
+Once the user is created, you can retrieve their details, including the custom attribute.
+
+5.1. C# Code to Fetch User Details
+
+var userId = "johndoe@yourtenant.onmicrosoft.com"; // UserPrincipalName or Object ID
+
+var user = await graphClient.Users[userId]
+    .Request()
+    .Select($"id,displayName,mail,extension_{extensionAppId}_Role") // Fetch custom attribute
+    .GetAsync();
+
+Console.WriteLine($"User Role: {user.AdditionalData[$"extension_{extensionAppId}_Role"]}");
+
+
+---
+
+Step 6: Testing the Implementation
+
+1. Run the user creation script to create a user.
+
+
+2. Run the user retrieval script to verify the Role attribute is stored.
+
+
+
+
+---
+
+Conclusion
+
+Now, you've successfully:
+
+Created a custom attribute in Azure AD B2C.
+
+Stored the role during user creation.
+
+Fetched the role using Microsoft Graph.
+
+
+This approach allows you to implement role-based access control (RBAC) in Azure AD B2C.
+
+Let me know if you need any clarifications!
+
