@@ -1,0 +1,146 @@
+To access claims in an ASP.NET Core Web API that is protected using Azure AD B2C, follow these steps:
+
+
+---
+
+Step 1: Ensure Your API is Configured for Authentication
+
+1. Go to Azure AD B2C → App registrations.
+
+
+2. Register Your API if not already done.
+
+
+3. Expose an API:
+
+Under Expose an API, set an Application ID URI (e.g., api://your-api-client-id).
+
+Define Scopes (e.g., user.read).
+
+
+
+4. Set Permissions:
+
+In Authentication, make sure your API allows token authentication.
+
+In API permissions, add Microsoft Graph → openid, profile, email.
+
+Click Grant admin consent.
+
+
+
+
+
+---
+
+Step 2: Secure API with JWT Authentication
+
+Modify appsettings.json:
+
+{
+  "AzureAdB2C": {
+    "Instance": "https://yourtenant.b2clogin.com",
+    "ClientId": "your-api-client-id",
+    "Domain": "yourtenant.onmicrosoft.com",
+    "SignUpSignInPolicyId": "B2C_1A_signup_signin",
+    "Issuer": "https://yourtenant.b2clogin.com/{tenantId}/v2.0/"
+  }
+}
+
+Update Program.cs:
+
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.Identity.Web;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddMicrosoftIdentityWebApi(builder.Configuration.GetSection("AzureAdB2C"));
+
+builder.Services.AddAuthorization();
+builder.Services.AddControllers();
+
+var app = builder.Build();
+app.UseAuthentication();
+app.UseAuthorization();
+app.MapControllers();
+app.Run();
+
+
+---
+
+Step 3: Access Claims in a Controller
+
+Modify your API controller to access user claims, including custom attributes like Role.
+
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using System.Linq;
+using System.Security.Claims;
+
+[Authorize] // Ensures the API is protected
+[ApiController]
+[Route("[controller]")]
+public class UserController : ControllerBase
+{
+    [HttpGet("claims")]
+    public IActionResult GetAllClaims()
+    {
+        var claims = User.Claims.Select(c => new { c.Type, c.Value }).ToList();
+        return Ok(claims);
+    }
+
+    [HttpGet("role")]
+    public IActionResult GetUserRole()
+    {
+        var roleClaim = User.Claims.FirstOrDefault(c => c.Type.Contains("extension_") && c.Type.EndsWith("Role"));
+        if (roleClaim != null)
+        {
+            return Ok(new { Role = roleClaim.Value });
+        }
+        return NotFound("Role claim not found.");
+    }
+}
+
+
+---
+
+Step 4: Test the API
+
+1. Get an Access Token:
+
+Authenticate using a B2C User Flow.
+
+Retrieve the token from Postman or a frontend app.
+
+
+Example of calling Microsoft Identity Platform (OAuth 2.0):
+
+curl -X POST "https://yourtenant.b2clogin.com/yourtenant.onmicrosoft.com/oauth2/v2.0/token" \
+-H "Content-Type: application/x-www-form-urlencoded" \
+-d "client_id=your-client-id&scope=openid%20profile%20offline_access%20api://your-api-client-id/user.read&grant_type=password&username=user@example.com&password=UserPassword123&client_secret=your-client-secret"
+
+
+2. Call the API:
+
+Pass the token in the Authorization header:
+
+
+curl -X GET "https://localhost:5001/user/role" -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+
+
+3. Decode the JWT Token at jwt.ms to verify claims.
+
+
+
+
+---
+
+Conclusion
+
+✅ Configured API authentication using JWT tokens.
+✅ Extracted custom claims (Role) from the JWT token.
+✅ Tested API using Postman or Curl.
+
+Let me know if you need more details!
+
