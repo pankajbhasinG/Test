@@ -1,0 +1,238 @@
+Here's a C# ASP.NET Core Web API solution using Dapper that:
+✅ Fetches users from SQL Server using Dapper.
+✅ Processes users in configurable batch sizes.
+✅ Limits total user migrations using a batch limit.
+✅ Marks migrated users in the database after successful migration.
+✅ Handles errors and logs failures.
+
+
+---
+
+1. Install Required Packages
+
+Run the following commands in your ASP.NET Core Web API project:
+
+dotnet add package Dapper
+dotnet add package Microsoft.Data.SqlClient
+dotnet add package Microsoft.Graph
+dotnet add package Microsoft.Identity.Client
+dotnet add package Newtonsoft.Json
+
+
+---
+
+2. Create Web API Controller
+
+Create UserMigrationController.cs in the Controllers folder.
+
+using Dapper;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Data.SqlClient;
+using Microsoft.Graph;
+using Microsoft.Identity.Client;
+using Newtonsoft.Json;
+using System;
+using System.Collections.Generic;
+using System.Data;
+using System.Linq;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Text;
+using System.Threading.Tasks;
+
+namespace MigrationAPI.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class UserMigrationController : ControllerBase
+    {
+        private readonly string _connectionString = "Server=your-sql-server;Database=your-database;User Id=your-username;Password=your-password;";
+        private static string tenantId = "your-b2c-tenant.onmicrosoft.com";
+        private static string clientId = "your-client-id";
+        private static string clientSecret = "your-client-secret";
+        private static string graphEndpoint = "https://graph.microsoft.com/v1.0/users";
+
+        [HttpPost("migrate")]
+        public async Task<IActionResult> MigrateUsers([FromQuery] int batchSize = 5, [FromQuery] int batchLimit = 10)
+        {
+            using var connection = new SqlConnection(_connectionString);
+            
+            // Get total users that need migration
+            var totalUsers = await connection.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM Users WHERE IsMigrated = 0");
+
+            if (totalUsers == 0)
+                return NotFound("No users found to migrate.");
+
+            Console.WriteLine($"Total Users Pending: {totalUsers}");
+            Console.WriteLine($"Processing in batches of {batchSize}, up to {batchLimit} batches...");
+
+            int processedBatches = 0;
+
+            while (processedBatches < batchLimit)
+            {
+                var users = await connection.QueryAsync<UserModel>("SELECT TOP (@BatchSize) * FROM Users WHERE IsMigrated = 0", new { BatchSize = batchSize });
+
+                if (!users.Any())
+                    break;
+
+                var tasks = users.Select(user => CreateB2CUser(user, connection)).ToList();
+                await Task.WhenAll(tasks);
+
+                processedBatches++;
+            }
+
+            return Ok("User migration process completed.");
+        }
+
+        private async Task CreateB2CUser(UserModel user, SqlConnection connection)
+        {
+            int maxRetries = 3;
+            int delay = 2000; // Initial delay in milliseconds
+
+            for (int attempt = 1; attempt <= maxRetries; attempt++)
+            {
+                try
+                {
+                    var token = await GetAccessToken();
+
+                    using var httpClient = new HttpClient();
+                    httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+                    var requestBody = new
+                    {
+                        accountEnabled = true,
+                        displayName = user.DisplayName,
+                        mailNickname = user.Email.Split('@')[0],
+                        userPrincipalName = user.Email,
+                        passwordProfile = new
+                        {
+                            forceChangePasswordNextSignIn = false,
+                            password = user.Password
+                        }
+                    };
+
+                    var jsonContent = JsonConvert.SerializeObject(requestBody);
+                    var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+
+                    var response = await httpClient.PostAsync(graphEndpoint, content);
+
+                    if (response.IsSuccessStatusCode)
+                    {
+                        Console.WriteLine($"User {user.Email} created successfully.");
+                        await MarkUserAsMigrated(user.Id, connection);
+                        return;
+                    }
+                    else
+                    {
+                        string responseContent = await response.Content.ReadAsStringAsync();
+                        Console.WriteLine($"Error creating user {user.Email}: {response.StatusCode} - {responseContent}");
+
+                        if ((int)response.StatusCode == 429) // Too Many Requests
+                        {
+                            Console.WriteLine("Rate limit hit, retrying...");
+                            await Task.Delay(delay);
+                            delay *= 2;
+                            continue;
+                        }
+                        LogError($"User: {user.Email} | Error: {responseContent}");
+                        break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Exception for user {user.Email}: {ex.Message}");
+                    LogError($"User: {user.Email} | Exception: {ex.Message}");
+                    await Task.Delay(delay);
+                    delay *= 2;
+                }
+            }
+        }
+
+        private async Task<string> GetAccessToken()
+        {
+            var app = ConfidentialClientApplicationBuilder.Create(clientId)
+                .WithClientSecret(clientSecret)
+                .WithAuthority(new Uri($"https://login.microsoftonline.com/{tenantId}"))
+                .Build();
+
+            var result = await app.AcquireTokenForClient(new string[] { "https://graph.microsoft.com/.default" }).ExecuteAsync();
+            return result.AccessToken;
+        }
+
+        private async Task MarkUserAsMigrated(int userId, SqlConnection connection)
+        {
+            await connection.ExecuteAsync("UPDATE Users SET IsMigrated = 1 WHERE Id = @UserId", new { UserId = userId });
+        }
+
+        private void LogError(string message)
+        {
+            System.IO.File.AppendAllText("migration_errors.log", $"{DateTime.Now}: {message}\n");
+        }
+    }
+
+    public class UserModel
+    {
+        public int Id { get; set; }
+        public string DisplayName { get; set; }
+        public string Email { get; set; }
+        public string Password { get; set; }
+        public bool IsMigrated { get; set; }
+    }
+}
+
+
+---
+
+3. Database Schema
+
+Modify your Users table to include a migration flag:
+
+ALTER TABLE Users ADD IsMigrated BIT DEFAULT 0;
+
+
+---
+
+4. Configuring Database Connection
+
+Modify appsettings.json to add the SQL Server connection string:
+
+"ConnectionStrings": {
+    "DefaultConnection": "Server=your-sql-server;Database=your-database;User Id=your-username;Password=your-password;"
+}
+
+
+---
+
+5. Running the API
+
+5.1 Start the API
+
+dotnet run
+
+5.2 Migrate Users with Default Batch Size (5) and Batch Limit (10)
+
+curl -X POST "http://localhost:5000/api/UserMigration/migrate"
+
+5.3 Migrate Users with Custom Batch Size (10) and Batch Limit (20)
+
+curl -X POST "http://localhost:5000/api/UserMigration/migrate?batchSize=10&batchLimit=20"
+
+
+---
+
+6. Features Implemented
+
+✅ Dapper for Fast SQL Queries
+✅ Batch Processing with Configurable Batch Size
+✅ Batch Limit to Avoid Overloading the System
+✅ Marks Users as Migrated After Successful B2C Creation
+✅ Retries and Handles Azure Rate Limits (429 Errors)
+✅ Logs Errors in migration_errors.log
+
+
+---
+
+Next Steps
+
+Would you like to add authentication (JWT) for API security? Or integrate logging in a database instead of a file?
+
