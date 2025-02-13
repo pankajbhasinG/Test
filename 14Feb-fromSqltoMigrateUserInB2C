@@ -1,0 +1,192 @@
+If you don’t want to modify the existing users table, you can create a new migration tracking table to store migrated user records. Here’s how:
+
+
+---
+
+1. Create a Migration Tracking Table
+
+Modify your database schema to add a new table:
+
+CREATE TABLE MigratedUsers (
+    Id INT IDENTITY(1,1) PRIMARY KEY,
+    UserId INT NOT NULL,
+    Email NVARCHAR(255) UNIQUE NOT NULL,
+    MigratedAt DATETIME DEFAULT GETDATE()
+);
+
+UserId: References the original user’s ID.
+
+Email: Ensures uniqueness to prevent duplicate migrations.
+
+MigratedAt: Timestamp of migration.
+
+
+
+---
+
+2. Update the Web API Code
+
+Modify the Dapper query to check the new table before migrating users.
+
+using Dapper;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Data.SqlClient;
+using Microsoft.Graph;
+using Microsoft.Identity.Client;
+using Newtonsoft.Json;
+using System;
+using System.Collections.Generic;
+using System.Data;
+using System.Linq;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Text;
+using System.Threading.Tasks;
+
+namespace MigrationAPI.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class UserMigrationController : ControllerBase
+    {
+        private readonly string _connectionString = "Server=your-sql-server;Database=your-database;User Id=your-username;Password=your-password;";
+        private static string tenantId = "your-b2c-tenant.onmicrosoft.com";
+        private static string clientId = "your-client-id";
+        private static string clientSecret = "your-client-secret";
+        private static string graphEndpoint = "https://graph.microsoft.com/v1.0/users";
+
+        [HttpPost("migrate")]
+        public async Task<IActionResult> MigrateUsers([FromQuery] int batchSize = 5, [FromQuery] int batchLimit = 10)
+        {
+            using var connection = new SqlConnection(_connectionString);
+
+            int processedBatches = 0;
+
+            while (processedBatches < batchLimit)
+            {
+                var users = await connection.QueryAsync<UserModel>(
+                    @"SELECT TOP (@BatchSize) u.* 
+                      FROM Users u
+                      LEFT JOIN MigratedUsers m ON u.Id = m.UserId
+                      WHERE m.UserId IS NULL", 
+                    new { BatchSize = batchSize });
+
+                if (!users.Any())
+                    break;
+
+                var tasks = users.Select(user => CreateB2CUser(user, connection)).ToList();
+                await Task.WhenAll(tasks);
+
+                processedBatches++;
+            }
+
+            return Ok("User migration process completed.");
+        }
+
+        private async Task CreateB2CUser(UserModel user, SqlConnection connection)
+        {
+            int maxRetries = 3;
+            int delay = 2000;
+
+            for (int attempt = 1; attempt <= maxRetries; attempt++)
+            {
+                try
+                {
+                    var token = await GetAccessToken();
+
+                    using var httpClient = new HttpClient();
+                    httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+                    var requestBody = new
+                    {
+                        accountEnabled = true,
+                        displayName = user.DisplayName,
+                        mailNickname = user.Email.Split('@')[0],
+                        userPrincipalName = user.Email,
+                        passwordProfile = new
+                        {
+                            forceChangePasswordNextSignIn = false,
+                            password = user.Password
+                        }
+                    };
+
+                    var jsonContent = JsonConvert.SerializeObject(requestBody);
+                    var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+
+                    var response = await httpClient.PostAsync(graphEndpoint, content);
+
+                    if (response.IsSuccessStatusCode)
+                    {
+                        Console.WriteLine($"User {user.Email} created successfully.");
+                        await MarkUserAsMigrated(user.Id, user.Email, connection);
+                        return;
+                    }
+                    else
+                    {
+                        string responseContent = await response.Content.ReadAsStringAsync();
+                        Console.WriteLine($"Error creating user {user.Email}: {response.StatusCode} - {responseContent}");
+
+                        if ((int)response.StatusCode == 429)
+                        {
+                            Console.WriteLine("Rate limit hit, retrying...");
+                            await Task.Delay(delay);
+                            delay *= 2;
+                            continue;
+                        }
+                        LogError($"User: {user.Email} | Error: {responseContent}");
+                        break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Exception for user {user.Email}: {ex.Message}");
+                    LogError($"User: {user.Email} | Exception: {ex.Message}");
+                    await Task.Delay(delay);
+                    delay *= 2;
+                }
+            }
+        }
+
+        private async Task<string> GetAccessToken()
+        {
+            var app = ConfidentialClientApplicationBuilder.Create(clientId)
+                .WithClientSecret(clientSecret)
+                .WithAuthority(new Uri($"https://login.microsoftonline.com/{tenantId}"))
+                .Build();
+
+            var result = await app.AcquireTokenForClient(new string[] { "https://graph.microsoft.com/.default" }).ExecuteAsync();
+            return result.AccessToken;
+        }
+
+        private async Task MarkUserAsMigrated(int userId, string email, SqlConnection connection)
+        {
+            await connection.ExecuteAsync("INSERT INTO MigratedUsers (UserId, Email) VALUES (@UserId, @Email)", 
+                new { UserId = userId, Email = email });
+        }
+
+        private void LogError(string message)
+        {
+            System.IO.File.AppendAllText("migration_errors.log", $"{DateTime.Now}: {message}\n");
+        }
+    }
+
+    public class UserModel
+    {
+        public int Id { get; set; }
+        public string DisplayName { get; set; }
+        public string Email { get; set; }
+        public string Password { get; set; }
+    }
+}
+
+
+---
+
+3. Key Updates
+
+✅ Uses a separate MigratedUsers table instead of modifying the existing users table.
+✅ Joins Users table with MigratedUsers to fetch only non-migrated users.
+✅ Ensures no duplicate migrations using the Email UNIQUE constraint.
+
+Would you like to schedule automatic migrations instead of manually triggering them?
+
