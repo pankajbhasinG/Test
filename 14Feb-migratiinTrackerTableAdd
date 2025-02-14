@@ -1,0 +1,136 @@
+If you need to ensure that a tracking table (e.g., MigratedUsers) exists before updating it, the sequence of execution should be updated accordingly. Here’s the modified flow, including a table existence check:
+
+
+---
+
+Updated Sequence of Execution
+
+1. Client calls API (POST /api/UserMigration/migrate).
+
+
+2. Controller (UserMigrationController) validates the request and calls the Service (UserMigrationService).
+
+
+3. Service checks if the MigratedUsers table exists in the database. If not, it creates the table.
+
+
+4. Service fetches users from the Repository (UserRepository).
+
+
+5. Service iterates through users and calls Azure B2C API (IAzureB2CMigrationService).
+
+
+6. If migration is successful, Repository marks users as migrated and logs them in MigratedUsers table.
+
+
+7. Service returns success/failure to the Controller.
+
+
+8. Controller returns an HTTP response.
+
+
+
+
+---
+
+Updated Code
+
+1. Service Layer (UserMigrationService)
+
+public class UserMigrationService : IUserMigrationService
+{
+    private readonly IUserRepository _userRepository;
+    private readonly IAzureB2CMigrationService _azureB2CMigrationService;
+
+    public UserMigrationService(IUserRepository userRepository, IAzureB2CMigrationService azureB2CMigrationService)
+    {
+        _userRepository = userRepository;
+        _azureB2CMigrationService = azureB2CMigrationService;
+    }
+
+    public async Task<bool> MigrateUsersAsync()
+    {
+        // Ensure the tracking table exists
+        await _userRepository.EnsureMigrationTableExistsAsync();
+
+        int batchSize = 100;
+        var users = await _userRepository.GetUsersForMigrationAsync(batchSize);
+        
+        if (!users.Any()) return false;
+
+        foreach (var user in users)
+        {
+            bool isMigrated = await _azureB2CMigrationService.MigrateUserToAzureB2CAsync(user);
+            if (isMigrated)
+            {
+                await _userRepository.MarkUserAsMigratedAsync(user.Id);
+                await _userRepository.LogMigrationAsync(user.Id);
+            }
+        }
+
+        return true;
+    }
+}
+
+
+---
+
+2. Repository Layer (UserRepository)
+
+public class UserRepository : IUserRepository
+{
+    private readonly IDbConnection _dbConnection;
+
+    public UserRepository(IDbConnection dbConnection)
+    {
+        _dbConnection = dbConnection;
+    }
+
+    // Ensure that the migration tracking table exists
+    public async Task EnsureMigrationTableExistsAsync()
+    {
+        string sql = @"
+            IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'MigratedUsers')
+            BEGIN
+                CREATE TABLE MigratedUsers (
+                    Id INT IDENTITY(1,1) PRIMARY KEY,
+                    UserId INT NOT NULL,
+                    MigrationDate DATETIME DEFAULT GETDATE()
+                );
+            END";
+        await _dbConnection.ExecuteAsync(sql);
+    }
+
+    public async Task<IEnumerable<User>> GetUsersForMigrationAsync(int batchSize)
+    {
+        string sql = "SELECT TOP (@BatchSize) * FROM Users WHERE IsMigrated = 0";
+        return await _dbConnection.QueryAsync<User>(sql, new { BatchSize = batchSize });
+    }
+
+    public async Task MarkUserAsMigratedAsync(int userId)
+    {
+        string sql = "UPDATE Users SET IsMigrated = 1 WHERE Id = @UserId";
+        await _dbConnection.ExecuteAsync(sql, new { UserId = userId });
+    }
+
+    public async Task LogMigrationAsync(int userId)
+    {
+        string sql = "INSERT INTO MigratedUsers (UserId) VALUES (@UserId)";
+        await _dbConnection.ExecuteAsync(sql, new { UserId = userId });
+    }
+}
+
+
+---
+
+Summary of Changes
+
+Step added: Checking if the MigratedUsers table exists before running migrations.
+
+New Method: EnsureMigrationTableExistsAsync() in the repository to create the table if it doesn't exist.
+
+Migration Logging: LogMigrationAsync() records migrated users.
+
+
+This ensures that migration tracking is handled properly. Let me know if you need further tweaks!
+
