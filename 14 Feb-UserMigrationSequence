@@ -1,0 +1,146 @@
+In an ASP.NET Core Web API, it's a good practice to keep controllers lightweight and delegate business logic to services. Here’s the recommended sequence of tasks when handling a request in a Controller-Service-Repository pattern:
+
+
+---
+
+1. Controller (API Layer)
+
+Validate input (Model Binding, Model Validation).
+
+Call the appropriate service method.
+
+Return an appropriate HTTP response.
+
+
+[ApiController]
+[Route("api/[controller]")]
+public class UserMigrationController : ControllerBase
+{
+    private readonly IUserMigrationService _migrationService;
+
+    public UserMigrationController(IUserMigrationService migrationService)
+    {
+        _migrationService = migrationService;
+    }
+
+    [HttpPost("migrate")]
+    public async Task<IActionResult> MigrateUsers()
+    {
+        var result = await _migrationService.MigrateUsersAsync();
+        return result ? Ok("Migration completed successfully.") : StatusCode(500, "Migration failed.");
+    }
+}
+
+
+---
+
+2. Service (Business Logic Layer)
+
+Fetch data from the database (via repository).
+
+Process and validate data.
+
+Call external APIs (e.g., Azure AD B2C).
+
+Apply business rules.
+
+Return the processed result.
+
+
+public class UserMigrationService : IUserMigrationService
+{
+    private readonly IUserRepository _userRepository;
+    private readonly IAzureB2CMigrationService _azureB2CMigrationService;
+
+    public UserMigrationService(IUserRepository userRepository, IAzureB2CMigrationService azureB2CMigrationService)
+    {
+        _userRepository = userRepository;
+        _azureB2CMigrationService = azureB2CMigrationService;
+    }
+
+    public async Task<bool> MigrateUsersAsync()
+    {
+        int batchSize = 100;
+        var users = await _userRepository.GetUsersForMigrationAsync(batchSize);
+        
+        if (!users.Any()) return false;
+
+        foreach (var user in users)
+        {
+            bool isMigrated = await _azureB2CMigrationService.MigrateUserToAzureB2CAsync(user);
+            if (isMigrated)
+            {
+                await _userRepository.MarkUserAsMigratedAsync(user.Id);
+            }
+        }
+
+        return true;
+    }
+}
+
+
+---
+
+3. Repository (Data Access Layer)
+
+Fetch data from SQL Server using Dapper.
+
+Update the migration status.
+
+Keep database logic separate from business logic.
+
+
+public class UserRepository : IUserRepository
+{
+    private readonly IDbConnection _dbConnection;
+
+    public UserRepository(IDbConnection dbConnection)
+    {
+        _dbConnection = dbConnection;
+    }
+
+    public async Task<IEnumerable<User>> GetUsersForMigrationAsync(int batchSize)
+    {
+        string sql = "SELECT TOP (@BatchSize) * FROM Users WHERE IsMigrated = 0";
+        return await _dbConnection.QueryAsync<User>(sql, new { BatchSize = batchSize });
+    }
+
+    public async Task MarkUserAsMigratedAsync(int userId)
+    {
+        string sql = "UPDATE Users SET IsMigrated = 1 WHERE Id = @UserId";
+        await _dbConnection.ExecuteAsync(sql, new { UserId = userId });
+    }
+}
+
+
+---
+
+Sequence of Execution
+
+1. Client calls API (POST /api/UserMigration/migrate).
+
+
+2. Controller (UserMigrationController) validates the request and calls the Service (UserMigrationService).
+
+
+3. Service fetches users from the Repository (UserRepository).
+
+
+4. Service iterates through users and calls Azure B2C API (IAzureB2CMigrationService).
+
+
+5. If successful, the Repository marks users as migrated.
+
+
+6. Service returns success/failure to the Controller.
+
+
+7. Controller returns an HTTP response.
+
+
+
+
+---
+
+This approach ensures separation of concerns and makes the code maintainable, testable, and scalable. Do you need any modifications based on your requirements?
+
