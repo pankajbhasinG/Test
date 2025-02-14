@@ -1,0 +1,126 @@
+Yes, it’s a good practice to initialize IDbConnection in the Data Access Layer (Repository Layer) using Dependency Injection (DI). This ensures:
+
+✅ Separation of Concerns – Keeps database connection management within the repository.
+✅ Reusability – Allows different repositories to use the same connection factory.
+✅ Maintainability – Centralizes connection management, making it easy to modify database settings.
+
+
+---
+
+Recommended Approach
+
+Instead of directly injecting IDbConnection into the repository, use a DbConnection Factory in the Data Access Layer.
+
+1. Create a Database Connection Factory
+
+This factory will create and manage IDbConnection instances.
+
+public interface IDbConnectionFactory
+{
+    IDbConnection CreateConnection();
+}
+
+public class DbConnectionFactory : IDbConnectionFactory
+{
+    private readonly string _connectionString;
+
+    public DbConnectionFactory(IConfiguration configuration)
+    {
+        _connectionString = configuration.GetConnectionString("DefaultConnection");
+    }
+
+    public IDbConnection CreateConnection()
+    {
+        return new SqlConnection(_connectionString);
+    }
+}
+
+
+---
+
+2. Modify the Repository to Use IDbConnectionFactory
+
+Instead of injecting IDbConnection, inject IDbConnectionFactory.
+
+public class UserRepository : IUserRepository
+{
+    private readonly IDbConnectionFactory _dbConnectionFactory;
+
+    public UserRepository(IDbConnectionFactory dbConnectionFactory)
+    {
+        _dbConnectionFactory = dbConnectionFactory;
+    }
+
+    public async Task EnsureMigrationTableExistsAsync()
+    {
+        using (var connection = _dbConnectionFactory.CreateConnection())
+        {
+            string sql = @"
+                IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'MigratedUsers')
+                BEGIN
+                    CREATE TABLE MigratedUsers (
+                        Id INT IDENTITY(1,1) PRIMARY KEY,
+                        UserId INT NOT NULL UNIQUE,
+                        MigrationDate DATETIME DEFAULT GETDATE()
+                    );
+                END";
+            await connection.ExecuteAsync(sql);
+        }
+    }
+
+    public async Task<IEnumerable<User>> GetUsersForMigrationAsync(int batchSize)
+    {
+        using (var connection = _dbConnectionFactory.CreateConnection())
+        {
+            string sql = "SELECT TOP (@BatchSize) * FROM Users WHERE IsMigrated = 0";
+            return await connection.QueryAsync<User>(sql, new { BatchSize = batchSize });
+        }
+    }
+
+    public async Task MarkUserAsMigratedAsync(int userId)
+    {
+        using (var connection = _dbConnectionFactory.CreateConnection())
+        {
+            string sql = "UPDATE Users SET IsMigrated = 1 WHERE Id = @UserId";
+            await connection.ExecuteAsync(sql, new { UserId = userId });
+        }
+    }
+
+    public async Task LogMigrationAsync(int userId)
+    {
+        using (var connection = _dbConnectionFactory.CreateConnection())
+        {
+            string sql = "INSERT INTO MigratedUsers (UserId) VALUES (@UserId)";
+            await connection.ExecuteAsync(sql, new { UserId = userId });
+        }
+    }
+}
+
+
+---
+
+3. Register Services in Program.cs
+
+Make sure to register the factory and repository in Program.cs.
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Register DbConnectionFactory
+builder.Services.AddSingleton<IDbConnectionFactory, DbConnectionFactory>();
+
+// Register Repositories
+builder.Services.AddScoped<IUserRepository, UserRepository>();
+
+// Register Services
+builder.Services.AddScoped<IUserMigrationService, UserMigrationService>();
+
+var app = builder.Build();
+
+app.MapControllers();
+app.Run();
+
+
+---
+
+Final Execution Order
+
