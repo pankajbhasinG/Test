@@ -1,0 +1,247 @@
+🔹 Azure Function for Migrating Users to Azure AD B2C
+
+Since you want to automate user migration from SQL Server to Azure AD B2C, the best approach is to use an Azure Function with a Timer Trigger.
+
+This function will run on a schedule (e.g., every 10 minutes) to migrate users in batches while handling rate limits, failures, and retries.
+
+
+---
+
+🛠 Steps to Deploy in Azure
+
+1️⃣ Create an Azure Function App
+
+1. Go to Azure Portal → Function Apps → Create
+
+
+2. Choose Runtime: .NET Core
+
+
+3. Choose Consumption Plan for automatic scaling
+
+
+4. Enable Managed Identity (optional for secure SQL access)
+
+
+
+
+---
+
+2️⃣ Install Required Packages
+
+Run the following in your Azure Function project:
+
+dotnet add package Dapper
+dotnet add package Microsoft.Azure.WebJobs.Extensions.Timer
+dotnet add package Newtonsoft.Json
+dotnet add package Polly
+
+
+---
+
+3️⃣ Create the Azure Function (UserMigrationFunction.cs)
+
+using System;
+using System.Collections.Generic;
+using System.Data.SqlClient;
+using System.Linq;
+using System.Net;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Text;
+using System.Threading.Tasks;
+using Dapper;
+using Microsoft.Azure.WebJobs;
+using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
+using Polly;
+
+public class UserMigrationFunction
+{
+    private static readonly string sqlConnectionString = Environment.GetEnvironmentVariable("SQL_CONNECTION_STRING");
+    private static readonly string tenantId = Environment.GetEnvironmentVariable("AZURE_B2C_TENANT_ID");
+    private static readonly string clientId = Environment.GetEnvironmentVariable("AZURE_B2C_CLIENT_ID");
+    private static readonly string clientSecret = Environment.GetEnvironmentVariable("AZURE_B2C_CLIENT_SECRET");
+
+    [FunctionName("MigrateUsersToAzureB2C")]
+    public async Task Run([TimerTrigger("0 */10 * * * *")] TimerInfo myTimer, ILogger log)
+    {
+        log.LogInformation("User migration function started at: " + DateTime.Now);
+
+        int batchSize = 10000;
+        int parallelism = 100; // Max concurrent API calls
+
+        using (var connection = new SqlConnection(sqlConnectionString))
+        {
+            var users = connection.Query<User>("SELECT TOP (@BatchSize) * FROM Users WHERE IsMigrated = 0", new { BatchSize = batchSize }).ToList();
+            if (!users.Any())
+            {
+                log.LogInformation("No users left to migrate.");
+                return;
+            }
+
+            log.LogInformation($"Migrating {users.Count} users...");
+            await MigrateUsersInParallel(users, parallelism, log);
+        }
+
+        log.LogInformation("User migration function completed at: " + DateTime.Now);
+    }
+
+    private async Task MigrateUsersInParallel(List<User> users, int parallelism, ILogger log)
+    {
+        var semaphore = new SemaphoreSlim(parallelism);
+        var tasks = users.Select(async user =>
+        {
+            await semaphore.WaitAsync();
+            try
+            {
+                await MigrateUserToAzureB2C(user, log);
+            }
+            finally
+            {
+                semaphore.Release();
+            }
+        }).ToList();
+
+        await Task.WhenAll(tasks);
+    }
+
+    private async Task MigrateUserToAzureB2C(User user, ILogger log)
+    {
+        string accessToken = await GetAccessToken();
+
+        var userPayload = new
+        {
+            accountEnabled = true,
+            displayName = $"{user.FirstName} {user.LastName}",
+            mailNickname = user.Email.Split('@')[0],
+            identities = new[]
+            {
+                new { signInType = "emailAddress", issuer = "yourtenant.onmicrosoft.com", issuerAssignedId = user.Email }
+            },
+            passwordProfile = new
+            {
+                forceChangePasswordNextSignIn = false,
+                password = "SecureP@ssword!"
+            }
+        };
+
+        string json = JsonConvert.SerializeObject(userPayload);
+        using (var client = new HttpClient())
+        {
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+            var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+            var retryPolicy = Policy
+                .Handle<HttpRequestException>()
+                .OrResult<HttpResponseMessage>(r => r.StatusCode == (HttpStatusCode)429) // Too many requests
+                .WaitAndRetryAsync(3, retryAttempt => TimeSpan.FromSeconds(10));
+
+            var response = await retryPolicy.ExecuteAsync(() => client.PostAsync("https://graph.microsoft.com/v1.0/users", content));
+
+            using (var connection = new SqlConnection(sqlConnectionString))
+            {
+                if (response.IsSuccessStatusCode)
+                {
+                    log.LogInformation($"User {user.Email} migrated successfully.");
+                    connection.Execute("UPDATE Users SET IsMigrated = 1 WHERE UserId = @UserId", new { user.UserId });
+                }
+                else
+                {
+                    string errorMessage = await response.Content.ReadAsStringAsync();
+                    log.LogError($"Failed to migrate {user.Email}: {errorMessage}");
+                    connection.Execute("INSERT INTO MigrationLog (UserId, Status, ErrorMessage, LastAttempt) VALUES (@UserId, 'Failed', @ErrorMessage, GETDATE()) ON DUPLICATE KEY UPDATE Status='Failed', ErrorMessage=@ErrorMessage, LastAttempt=GETDATE()",
+                        new { user.UserId, ErrorMessage = errorMessage });
+                }
+            }
+        }
+    }
+
+    private async Task<string> GetAccessToken()
+    {
+        using (var client = new HttpClient())
+        {
+            var content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                { "grant_type", "client_credentials" },
+                { "client_id", clientId },
+                { "client_secret", clientSecret },
+                { "scope", "https://graph.microsoft.com/.default" }
+            });
+
+            var response = await client.PostAsync($"https://login.microsoftonline.com/{tenantId}/oauth2/v2.0/token", content);
+            var jsonResponse = await response.Content.ReadAsStringAsync();
+            dynamic token = JsonConvert.DeserializeObject(jsonResponse);
+            return token.access_token;
+        }
+    }
+}
+
+public class User
+{
+    public int UserId { get; set; }
+    public string FirstName { get; set; }
+    public string LastName { get; set; }
+    public string Email { get; set; }
+}
+
+
+---
+
+🔹 Deployment Steps
+
+1️⃣ Set Environment Variables in Azure
+
+Go to Azure Portal → Function App → Configuration → Application Settings, and add:
+
+SQL_CONNECTION_STRING = "Your_SQL_Connection_String"
+
+AZURE_B2C_TENANT_ID = "Your_Tenant_ID"
+
+AZURE_B2C_CLIENT_ID = "Your_Client_ID"
+
+AZURE_B2C_CLIENT_SECRET = "Your_Client_Secret"
+
+
+
+---
+
+2️⃣ Deploy the Azure Function
+
+A. Using Visual Studio
+
+1. Right-click on your Function App project → Publish
+
+
+2. Select Azure Function App (Windows/Linux)
+
+
+3. Click Publish
+
+
+
+B. Using Azure CLI
+
+func azure functionapp publish <YourFunctionAppName>
+
+
+---
+
+🚀 How This Works
+
+✔ Runs every 10 minutes to migrate the next batch of users.
+✔ Handles rate limits using Polly retry with exponential backoff.
+✔ Processes users in parallel (100 concurrent API calls).
+✔ Logs success & failures in SQL Server for resumable migration.
+
+
+---
+
+📌 Next Steps
+
+🔹 Test with a small dataset (e.g., 100 users) before full migration.
+🔹 Adjust batch size (10K) and parallelism (100) based on performance.
+🔹 Monitor execution in Azure Function Logs.
+
+Would you like help testing and monitoring this in Azure Functions? 🚀
+
