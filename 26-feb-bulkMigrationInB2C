@@ -1,0 +1,141 @@
+If you have millions of users to migrate from on-prem SQL Server to Azure AD B2C, the approach must be highly optimized for performance, parallel execution, and fault tolerance.
+
+
+---
+
+Optimized Bulk Migration for Millions of Users
+
+✅ Key Considerations
+
+✔ Batch Processing → Migrate users in batches (e.g., 10,000 at a time)
+✔ Parallel Execution → Use Task.WhenAll() to process multiple batches concurrently
+✔ Rate Limits Handling → Microsoft Graph API has limits (default: 10,000 API calls per 10 mins)
+✔ Resumable & Fault Tolerant → Log progress and retry failures
+
+
+---
+
+1. Choose the Best Approach
+
+Option 1: Microsoft Graph API (Limited but Works)
+
+Pros: Official API, supports creating users with email/password.
+
+Cons: Rate limited (~10,000 requests per 10 minutes).
+
+
+Option 2: Use Azure AD B2C Bulk Import via Microsoft Support (Best for Scale)
+
+Microsoft allows bulk user imports via backend tools for large-scale migrations.
+
+Requires support ticket with Microsoft to enable bulk migration.
+
+Recommended for millions of users.
+
+
+Which one do you prefer? If Microsoft Graph API, follow the steps below.
+
+
+---
+
+2. Extract Users Efficiently from SQL Server
+
+Use Dapper + Pagination (Instead of Fetching All at Once)
+
+int batchSize = 10000;
+int offset = 0;
+while (true)
+{
+    var users = connection.Query<User>(
+        "SELECT * FROM Users WHERE IsMigrated = 0 ORDER BY Id OFFSET @Offset ROWS FETCH NEXT @BatchSize ROWS ONLY",
+        new { Offset = offset, BatchSize = batchSize }
+    ).ToList();
+
+    if (!users.Any()) break; // No more users to migrate
+
+    await MigrateUsersToAzureB2C(users);
+
+    offset += batchSize;
+}
+
+
+---
+
+3. Migrate Users in Parallel with Microsoft Graph API
+
+Use Parallel API Calls for Speed
+
+async Task MigrateUsersToAzureB2C(List<User> users)
+{
+    var tasks = users.Select(user => CreateUserInAzureB2C(user)).ToArray();
+    await Task.WhenAll(tasks);
+}
+
+
+---
+
+4. Handle Microsoft Graph API Rate Limits
+
+Microsoft enforces API limits (10,000 requests per 10 minutes).
+
+Solution: Implement Throttling
+
+using Polly;
+var retryPolicy = Policy
+    .Handle<HttpRequestException>()
+    .OrResult<HttpResponseMessage>(r => r.StatusCode == (HttpStatusCode)429) // Too many requests
+    .WaitAndRetryAsync(3, retryAttempt => TimeSpan.FromSeconds(10));
+
+await retryPolicy.ExecuteAsync(() => CreateUserInAzureB2C(user));
+
+
+---
+
+5. Track Migration Progress & Resume Failed Jobs
+
+Create a "MigrationLog" Table
+
+CREATE TABLE MigrationLog (
+    UserId INT PRIMARY KEY,
+    Status VARCHAR(50), -- Success, Failed, InProgress
+    ErrorMessage TEXT NULL,
+    LastAttempt DATETIME
+);
+
+Update Migration Status in SQL
+
+connection.Execute("UPDATE MigrationLog SET Status = 'Success' WHERE UserId = @UserId", new { user.UserId });
+
+
+---
+
+6. Automate & Schedule the Migration
+
+Use Azure Functions or Windows Task Scheduler
+
+For Azure Functions (Best for Cloud Execution):
+
+Deploy the migration logic to Azure Functions with timer trigger.
+
+Schedule it to run every 10 minutes to process the next batch.
+
+
+public static async Task RunMigration([TimerTrigger("*/10 * * * * *")] TimerInfo myTimer)
+{
+    await StartMigrationProcess();
+}
+
+
+---
+
+🚀 Final Optimization Plan for Millions of Users
+
+
+---
+
+⚡ Alternative: Microsoft-Supported Bulk Import
+
+Since you have millions of users, the best approach is to contact Microsoft support and request access to Azure AD B2C bulk import tools, which can handle migration much faster than Graph API.
+
+Do you want help with a support ticket draft to request bulk import access?
+
