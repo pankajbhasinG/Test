@@ -1,0 +1,106 @@
+In your ASP.NET Core Web API, you can extract the user's email address from the Azure AD B2C access token by reading the claims in the HttpContext.User.
+
+
+---
+
+1. Extract Email from B2C Token in Controller
+
+Azure AD B2C includes user details in the JWT token claims, including email (emails or preferred_username). Use HttpContext.User to retrieve it:
+
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using System.Linq;
+using System.Security.Claims;
+
+[Authorize] // Ensure the user is authenticated
+[ApiController]
+[Route("api/[controller]")]
+public class UserController : ControllerBase
+{
+    [HttpGet("email")]
+    public IActionResult GetUserEmail()
+    {
+        var emailClaim = User.Claims.FirstOrDefault(c => 
+            c.Type == "emails" || c.Type == ClaimTypes.Email || c.Type == "preferred_username");
+
+        if (emailClaim != null)
+        {
+            return Ok(new { Email = emailClaim.Value });
+        }
+
+        return NotFound("Email claim not found in the token.");
+    }
+}
+
+
+---
+
+2. Ensure Your B2C Policy Includes Email Claims
+
+To receive the email address in the token, check your User Flow / Custom Policy settings in Azure AD B2C:
+
+Go to Azure AD B2C Portal
+
+Open User Flows
+
+Select the Sign-in or Sign-up policy
+
+Under Application Claims, ensure email is selected
+
+
+If using custom policies (Identity Experience Framework - IEF), ensure <OutputClaim ClaimTypeReferenceId="email" /> is included in your TrustFrameworkExtensions.xml.
+
+
+---
+
+3. Decode the Token (For Debugging)
+
+If the email is missing, check the token contents:
+
+Decode the JWT at jwt.ms
+
+Look for claims like emails, preferred_username, or upn
+
+
+You can also log the token in your API:
+
+var claims = User.Claims.Select(c => new { c.Type, c.Value });
+return Ok(claims);
+
+This helps identify the correct claim type.
+
+
+---
+
+4. Configure Authentication Middleware (If Not Already Done)
+
+Ensure your JWT authentication middleware is correctly configured in Program.cs:
+
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.Identity.Web;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddMicrosoftIdentityWebApi(builder.Configuration.GetSection("AzureAdB2C"));
+
+builder.Services.AddAuthorization();
+builder.Services.AddControllers();
+
+var app = builder.Build();
+app.UseAuthentication();
+app.UseAuthorization();
+app.MapControllers();
+app.Run();
+
+
+---
+
+Final Steps
+
+✅ Ensure email claim is included in Azure AD B2C user flow settings
+✅ Use HttpContext.User.Claims to fetch email inside the API
+✅ Debug the token using jwt.ms if email is missing
+
+Let me know if you need further debugging or a full API sample!
+
