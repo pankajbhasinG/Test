@@ -1,0 +1,67 @@
+Here’s a complete C# ASP.NET Core solution to validate claims from an Azure AD B2C token and refresh it if needed.
+
+
+---
+
+1. Install Required Packages
+
+In your .NET Core Web API project, install these NuGet packages:
+
+dotnet add package Microsoft.IdentityModel.Tokens
+dotnet add package System.IdentityModel.Tokens.Jwt
+dotnet add package Microsoft.AspNetCore.Authentication.JwtBearer
+
+
+---
+
+2. Configure Authentication in Program.cs
+
+Modify your ASP.NET Core API to validate JWT tokens.
+
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Add Authentication & JWT Bearer Token Validation
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.Authority = "https://yourtenant.b2clogin.com/yourtenant.onmicrosoft.com/B2C_1_your_policy/v2.0/";
+        options.Audience = "your-client-id"; // API Client ID
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true, // Ensure token isn't expired
+            ValidateIssuerSigningKey = true
+        };
+        options.Events = new JwtBearerEvents
+        {
+            OnAuthenticationFailed = context =>
+            {
+                if (context.Exception.GetType() == typeof(SecurityTokenExpiredException))
+                {
+                    context.Response.Headers.Add("Token-Expired", "true");
+                }
+                return Task.CompletedTask;
+            }
+        };
+    });
+
+builder.Services.AddAuthorization();
+builder.Services.AddControllers();
+
+var app = builder.Build();
+app.UseAuthentication();
+app.UseAuthorization();
+app.MapControllers();
+app.Run();
+
+
+---
+
+**3. Create Token Helper to Validate
+
