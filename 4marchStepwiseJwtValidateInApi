@@ -1,0 +1,200 @@
+Great! Since you have a working JWT token from Azure AD B2C, let’s now send it to your API and validate the user and claims step by step.
+
+
+---
+
+Step 1: Add Authentication Middleware in ASP.NET Core API
+
+Open Program.cs and add JWT Bearer authentication:
+
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.Authority = "https://your-b2c-tenant-name.b2clogin.com/your-b2c-tenant-name.onmicrosoft.com/B2C_1A_your_policy_name/v2.0/";
+        options.Audience = "your-api-client-id";
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = "https://your-b2c-tenant-name.b2clogin.com/your-tenant-id/v2.0/",
+            ValidateAudience = true,
+            ValidAudience = "your-api-client-id",
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true
+        };
+    });
+
+builder.Services.AddAuthorization();
+
+var app = builder.Build();
+
+app.UseAuthentication();  // Important: Use authentication middleware
+app.UseAuthorization();
+
+app.MapControllers();
+
+app.Run();
+
+✅ Replace the placeholders:
+
+"your-b2c-tenant-name" → Your Azure B2C tenant
+
+"your-policy-name" → Your custom policy name
+
+"your-api-client-id" → App Registration Client ID of your API
+
+
+
+---
+
+Step 2: Secure API Controller with [Authorize]
+
+Modify your controller to require authentication:
+
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
+
+[Authorize]
+[ApiController]
+[Route("[controller]")]
+public class UserController : ControllerBase
+{
+    [HttpGet("profile")]
+    public IActionResult GetUserProfile()
+    {
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var email = User.FindFirst(ClaimTypes.Email)?.Value;
+
+        return Ok(new { UserId = userId, Email = email });
+    }
+}
+
+✅ This ensures only authenticated users can access /user/profile.
+
+
+---
+
+Step 3: Send Token from Frontend to API
+
+Use Postman, cURL, or a frontend app to send a request.
+
+A. Test with cURL
+
+curl -X GET "http://localhost:5000/user/profile" \
+     -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+
+✅ Replace YOUR_ACCESS_TOKEN with the actual token.
+
+B. Test with Postman
+
+1. Open Postman
+
+
+2. Set Method to GET → Enter URL: http://localhost:5000/user/profile
+
+
+3. Go to Authorization tab → Choose Bearer Token
+
+
+4. Paste the token in the token field
+
+
+5. Send Request
+
+
+
+✅ If successful, the response should contain the User ID and Email.
+
+
+---
+
+Step 4: Debug If User.Identity.IsAuthenticated is false
+
+If authentication fails, add logging to capture errors:
+
+options.Events = new JwtBearerEvents
+{
+    OnAuthenticationFailed = context =>
+    {
+        Console.WriteLine($"Authentication failed: {context.Exception.Message}");
+        return Task.CompletedTask;
+    },
+    OnTokenValidated = context =>
+    {
+        Console.WriteLine("Token successfully validated.");
+        return Task.CompletedTask;
+    }
+};
+
+✅ Run your API and check logs for errors.
+
+
+---
+
+Step 5: Manually Inspect Token Claims
+
+If User.Identity.IsAuthenticated is false, manually decode the token:
+
+using System.IdentityModel.Tokens.Jwt;
+
+var handler = new JwtSecurityTokenHandler();
+var jwtToken = handler.ReadJwtToken("YOUR_ACCESS_TOKEN");
+
+Console.WriteLine($"Issuer: {jwtToken.Issuer}");
+Console.WriteLine($"Audience: {jwtToken.Audiences.FirstOrDefault()}");
+Console.WriteLine($"Claims: {string.Join(", ", jwtToken.Claims.Select(c => $"{c.Type}: {c.Value}"))}");
+
+✅ Check if:
+
+aud (Audience) matches your API Client ID
+
+iss (Issuer) matches your B2C Tenant URL
+
+Claims contain email, name, etc.
+
+
+
+---
+
+Step 6: Fix Common Issues
+
+❌ Getting 401 Unauthorized?
+
+Ensure the API Client ID in ValidAudience matches the aud claim in the token.
+
+Ensure the token is actually being sent in requests (Check logs).
+
+
+❌ CORS issues?
+
+If calling from frontend, make sure CORS is enabled in API:
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAll", policy =>
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader());
+});
+
+app.UseCors("AllowAll");
+
+
+
+---
+
+Final Steps
+
+✔ API has authentication enabled (AddJwtBearer)
+✔ Controller is secured with [Authorize]
+✔ Token is being sent in requests (Authorization: Bearer <token>)
+✔ Logs show "Token successfully validated"
+✔ Token contains expected claims (email, sub, etc.)
+
+Try these steps and let me know if any errors appear!
+
