@@ -1,0 +1,156 @@
+To send an Azure AD B2C token via Postman and validate the user in a C# .NET Core API, follow these steps:
+
+
+---
+
+1. Get an Azure AD B2C Token
+
+Before you can send the token to your API, you need to obtain one. Use Postman to request an access token:
+
+Request a Token (Authorization Code Flow)
+
+Method: POST
+
+URL:
+
+https://<tenant>.b2clogin.com/<tenant>.onmicrosoft.com/<policy>/oauth2/v2.0/token
+
+Headers:
+
+Content-Type: application/x-www-form-urlencoded
+
+Body (x-www-form-urlencoded):
+
+grant_type: password
+client_id: <your-client-id>
+client_secret: <your-client-secret>
+scope: https://<tenant>.onmicrosoft.com/<api-scope>/user_impersonation offline_access
+username: <your-test-user-email>
+password: <your-test-user-password>
+response_type: token
+
+Click Send and copy the access_token.
+
+
+
+---
+
+2. Send the Token in Postman
+
+Now, call your API with the token:
+
+Method: GET (or POST, depending on your API)
+
+URL:
+
+https://your-api.com/protected-endpoint
+
+Headers:
+
+Authorization: Bearer <your-access-token>
+
+
+
+---
+
+3. Validate the Token in .NET Core API
+
+Modify your appsettings.json:
+
+"AzureAdB2C": {
+  "Instance": "https://yourtenant.b2clogin.com",
+  "ClientId": "your-client-id",
+  "Domain": "yourtenant.onmicrosoft.com",
+  "SignUpSignInPolicyId": "B2C_1_your_policy",
+  "TenantId": "yourtenant.onmicrosoft.com",
+  "Audience": "your-client-id"
+}
+
+Configure Authentication in Program.cs
+
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.Identity.Web;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddMicrosoftIdentityWebApi(builder.Configuration.GetSection("AzureAdB2C"));
+
+builder.Services.AddAuthorization();
+builder.Services.AddControllers();
+
+var app = builder.Build();
+app.UseAuthentication();
+app.UseAuthorization();
+app.MapControllers();
+app.Run();
+
+
+---
+
+4. Validate Token in a Controller
+
+Create a protected API endpoint:
+
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using System.IdentityModel.Tokens.Jwt;
+using System.Linq;
+
+[Route("api/[controller]")]
+[ApiController]
+public class ProtectedController : ControllerBase
+{
+    [HttpGet]
+    [Authorize]
+    public IActionResult GetUserInfo()
+    {
+        var claims = User.Claims.Select(c => new { c.Type, c.Value });
+        return Ok(claims);
+    }
+}
+
+
+---
+
+5. Refresh Token Implementation
+
+If your token expires, request a new one using the refresh token:
+
+Method: POST
+
+URL:
+
+https://<tenant>.b2clogin.com/<tenant>.onmicrosoft.com/<policy>/oauth2/v2.0/token
+
+Body (x-www-form-urlencoded):
+
+grant_type: refresh_token
+client_id: <your-client-id>
+client_secret: <your-client-secret>
+scope: https://<tenant>.onmicrosoft.com/<api-scope>/user_impersonation offline_access
+refresh_token: <your-refresh-token>
+
+
+This will return a new access_token and refresh_token.
+
+
+---
+
+Final Steps
+
+1. Get the access token in Postman.
+
+
+2. Send the token to your protected API using Authorization: Bearer <token>.
+
+
+3. Ensure your API is configured to validate the JWT token.
+
+
+4. Use the refresh token when the access token expires.
+
+
+
+Let me know if you need more details!
+
