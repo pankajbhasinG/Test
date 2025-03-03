@@ -1,0 +1,109 @@
+If you're verifying a JWT token's claims (such as sub, email, roles, etc.) in an ASP.NET Core Web API, you typically extract the token from the request and validate its values. Here’s how you can do it:
+
+
+---
+
+1. Extract JWT Token from Request
+
+If the token is passed in the Authorization header as a Bearer token, you can extract it like this:
+
+var authorizationHeader = Request.Headers["Authorization"].FirstOrDefault();
+if (authorizationHeader != null && authorizationHeader.StartsWith("Bearer "))
+{
+    var token = authorizationHeader.Substring("Bearer ".Length).Trim();
+}
+
+
+---
+
+2. Decode and Read Token Claims
+
+Use JwtSecurityTokenHandler to parse the token and extract claims:
+
+using System.IdentityModel.Tokens.Jwt;
+using System.Linq;
+
+var handler = new JwtSecurityTokenHandler();
+var jwtToken = handler.ReadJwtToken(token);
+
+var userId = jwtToken.Claims.FirstOrDefault(c => c.Type == "sub")?.Value;
+var email = jwtToken.Claims.FirstOrDefault(c => c.Type == "email")?.Value;
+var role = jwtToken.Claims.FirstOrDefault(c => c.Type == "role")?.Value;
+
+Console.WriteLine($"User ID: {userId}, Email: {email}, Role: {role}");
+
+
+---
+
+3. Match Token Values in API
+
+If you need to compare the extracted values with a database or API request values:
+
+if (userId == expectedUserId && email == expectedEmail)
+{
+    return Ok("Token values match!");
+}
+else
+{
+    return Unauthorized("Token values do not match.");
+}
+
+
+---
+
+4. Validate Token in Middleware (Recommended)
+
+If you are using ASP.NET Core authentication, it's better to let middleware handle JWT validation:
+
+Register JWT Authentication in Program.cs
+
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.Authority = "https://your-b2c-tenant.b2clogin.com/your-policy";
+        options.Audience = "your-api-client-id";
+    });
+
+builder.Services.AddAuthorization();
+
+Access Claims in API Controllers
+
+Once authentication is configured, you can access JWT claims like this in a controller:
+
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
+
+[Authorize]
+[ApiController]
+[Route("[controller]")]
+public class UserController : ControllerBase
+{
+    [HttpGet("profile")]
+    public IActionResult GetUserProfile()
+    {
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var email = User.FindFirst(ClaimTypes.Email)?.Value;
+        
+        return Ok(new { UserId = userId, Email = email });
+    }
+}
+
+
+---
+
+Conclusion
+
+Extract and parse JWT using JwtSecurityTokenHandler.
+
+Read claims and compare them with expected values.
+
+Use middleware authentication (AddJwtBearer) for automatic token validation.
+
+Access claims in API controllers using User.FindFirst().
+
+
+Let me know if you need help implementing this in your project!
+
