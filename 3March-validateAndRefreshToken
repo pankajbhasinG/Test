@@ -1,11 +1,11 @@
-Here’s a complete C# ASP.NET Core solution to validate claims from an Azure AD B2C token and refresh it if needed.
+Here’s a complete ASP.NET Core Web API solution to validate Azure AD B2C JWT token claims and refresh the token if needed.
 
 
 ---
 
 1. Install Required Packages
 
-In your .NET Core Web API project, install these NuGet packages:
+Run the following commands in your .NET Core Web API project:
 
 dotnet add package Microsoft.IdentityModel.Tokens
 dotnet add package System.IdentityModel.Tokens.Jwt
@@ -16,16 +16,15 @@ dotnet add package Microsoft.AspNetCore.Authentication.JwtBearer
 
 2. Configure Authentication in Program.cs
 
-Modify your ASP.NET Core API to validate JWT tokens.
+Modify your ASP.NET Core API to validate JWT tokens and handle expired tokens.
 
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
+using System.Threading.Tasks;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add Authentication & JWT Bearer Token Validation
+// Configure Authentication and JWT Bearer Token Validation
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
@@ -63,5 +62,232 @@ app.Run();
 
 ---
 
-**3. Create Token Helper to Validate
+3. Create Token Helper to Validate and Refresh Token
+
+This helper class:
+
+Validates the token
+
+Extracts claims
+
+Refreshes the token when expired
+
+
+using System;
+using System.IdentityModel.Tokens.Jwt;
+using System.Linq;
+using System.Net.Http;
+using System.Text;
+using System.Text.Json;
+using System.Threading.Tasks;
+
+public class TokenHelper
+{
+    public static bool IsTokenExpired(string token)
+    {
+        var handler = new JwtSecurityTokenHandler();
+        var jwtToken = handler.ReadJwtToken(token);
+
+        var expiry = jwtToken.ValidTo; // UTC expiry time
+        return expiry < DateTime.UtcNow;
+    }
+
+    public static string GetClaimValue(string token, string claimType)
+    {
+        var handler = new JwtSecurityTokenHandler();
+        var jwtToken = handler.ReadJwtToken(token);
+
+        var claim = jwtToken.Claims.FirstOrDefault(c => c.Type == claimType);
+        return claim?.Value;
+    }
+
+    public static async Task<string> RefreshTokenAsync(string refreshToken)
+    {
+        var client = new HttpClient();
+        var tokenEndpoint = "https://yourtenant.b2clogin.com/yourtenant.onmicrosoft.com/B2C_1_your_policy/oauth2/v2.0/token";
+
+        var content = new StringContent($"grant_type=refresh_token&client_id=your-client-id&client_secret=your-client-secret&refresh_token={refreshToken}&scope=openid offline_access",
+                                        Encoding.UTF8, "application/x-www-form-urlencoded");
+
+        var response = await client.PostAsync(tokenEndpoint, content);
+        var responseContent = await response.Content.ReadAsStringAsync();
+
+        if (response.IsSuccessStatusCode)
+        {
+            var json = JsonSerializer.Deserialize<JsonElement>(responseContent);
+            return json.GetProperty("access_token").GetString();
+        }
+        return null;
+    }
+}
+
+
+---
+
+4. Create API Controller to Validate Token and Refresh If Needed
+
+This controller:
+
+Validates the JWT token.
+
+Extracts user claims.
+
+Refreshes the token when expired.
+
+
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using System.IdentityModel.Tokens.Jwt;
+using System.Linq;
+using System.Threading.Tasks;
+
+[Route("api/[controller]")]
+[ApiController]
+public class AuthController : ControllerBase
+{
+    [HttpGet("validate-token")]
+    [Authorize]
+    public IActionResult ValidateToken()
+    {
+        var token = Request.Headers["Authorization"].ToString().Replace("Bearer ", "");
+
+        if (TokenHelper.IsTokenExpired(token))
+        {
+            return Unauthorized(new { message = "Token Expired", refreshRequired = true });
+        }
+
+        var claims = User.Claims.Select(c => new { c.Type, c.Value });
+        return Ok(new { message = "Token Valid", claims });
+    }
+
+    [HttpPost("refresh-token")]
+    public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenRequest request)
+    {
+        var newToken = await TokenHelper.RefreshTokenAsync(request.RefreshToken);
+        if (string.IsNullOrEmpty(newToken))
+        {
+            return BadRequest(new { message = "Token Refresh Failed" });
+        }
+
+        return Ok(new { access_token = newToken });
+    }
+}
+
+public class RefreshTokenRequest
+{
+    public string RefreshToken { get; set; }
+}
+
+
+---
+
+5. How to Test in Postman
+
+Step 1: Get an Access Token
+
+1. Open Postman.
+
+
+2. Send a POST request to:
+
+https://yourtenant.b2clogin.com/yourtenant.onmicrosoft.com/B2C_1_your_policy/oauth2/v2.0/token
+
+
+3. Body (x-www-form-urlencoded):
+
+grant_type: password
+client_id: your-client-id
+client_secret: your-client-secret
+scope: https://yourtenant.onmicrosoft.com/your-api-scope/user_impersonation offline_access
+username: your-user@example.com
+password: your-password
+
+
+4. Copy the access_token and refresh_token.
+
+
+
+
+---
+
+Step 2: Validate the Token
+
+1. Open Postman.
+
+
+2. Send a GET request to:
+
+https://your-api.com/api/auth/validate-token
+
+
+3. Headers:
+
+Authorization: Bearer your-access-token
+
+
+4. If the token is valid, you will receive:
+
+{
+  "message": "Token Valid",
+  "claims": [
+    { "Type": "email", "Value": "user@example.com" }
+  ]
+}
+
+
+5. If the token is expired, you will receive:
+
+{
+  "message": "Token Expired",
+  "refreshRequired": true
+}
+
+
+
+
+---
+
+Step 3: Refresh the Token
+
+1. Send a POST request to:
+
+https://your-api.com/api/auth/refresh-token
+
+
+2. Body (JSON):
+
+{
+  "refreshToken": "your-refresh-token"
+}
+
+
+3. If successful, you will receive a new access token:
+
+{
+  "access_token": "new-access-token"
+}
+
+
+4. Use this new token for further API calls.
+
+
+
+
+---
+
+Summary
+
+
+---
+
+This complete C# .NET Core solution ensures that:
+
+Users can validate their token.
+
+Claims can be extracted easily.
+
+Tokens are automatically refreshed when expired.
+
+
+Let me know if you need any modifications!
 
