@@ -1,0 +1,101 @@
+Alright, Pankaj — you want a full YAML pipeline that:
+
+1. Builds your code
+
+
+2. Publishes the build output
+
+
+3. Builds a Docker image
+
+
+4. Publishes Docker artifacts (like Dockerfile and/or the image)
+
+
+
+I'll give you a complete Azure DevOps pipeline (azure-pipelines.yml) example:
+
+
+---
+
+trigger:
+- main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  buildConfiguration: 'Release'
+  dockerImageName: 'your-image-name'
+  dockerImageTag: '$(Build.BuildId)'
+
+steps:
+# 1. Checkout code
+- task: Checkout@1
+
+# 2. Build your project (for example, a .NET app)
+- task: DotNetCoreCLI@2
+  inputs:
+    command: 'build'
+    projects: '**/*.csproj'
+    arguments: '--configuration $(buildConfiguration)'
+
+# 3. Publish build output
+- task: DotNetCoreCLI@2
+  inputs:
+    command: 'publish'
+    publishWebProjects: true
+    arguments: '--configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)'
+    zipAfterPublish: true
+
+# 4. Publish the build artifacts (output of app build)
+- task: PublishBuildArtifacts@1
+  inputs:
+    pathToPublish: '$(Build.ArtifactStagingDirectory)'
+    artifactName: 'drop'
+    publishLocation: 'Container'
+
+# 5. Build the Docker image
+- task: Docker@2
+  inputs:
+    command: 'build'
+    Dockerfile: '**/Dockerfile'
+    tags: '$(dockerImageName):$(dockerImageTag)'
+    repository: '$(dockerImageName)'
+
+# 6. Save the Dockerfile as an artifact (optional but sometimes useful)
+- task: PublishBuildArtifacts@1
+  inputs:
+    pathToPublish: '$(Build.SourcesDirectory)/Dockerfile'
+    artifactName: 'dockerfile'
+    publishLocation: 'Container'
+
+
+---
+
+What this pipeline does step-by-step:
+
+
+---
+
+If you also want to push Docker image to a Registry (like Azure Container Registry or Docker Hub), add this after Step 5:
+
+# 7. Push the Docker image to a container registry
+- task: Docker@2
+  inputs:
+    command: 'push'
+    repository: '$(dockerImageName)'
+    tags: '$(dockerImageTag)'
+
+You’ll need to add a Docker service connection in Azure DevOps for authentication.
+
+
+---
+
+Bonus Tip:
+If your project is Node.js, Java, Python, or something else — the build and publish steps will change a little. Tell me your stack if you want a customized version!
+
+Would you also like a version for GitHub Actions?
+I can send that too if you're using GitHub instead of Azure DevOps.
+Let me know!
+
