@@ -1,0 +1,74 @@
+Perfect — let me show you exactly where and how to insert Option 2 (the middleware that handles preflight OPTIONS requests) in your Program.cs.
+
+Assuming you're using .NET 6+ (Minimal API style), here's how it should look:
+
+
+---
+
+Program.cs — Full Example with Preflight Middleware
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Add services
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("MyCorsPolicy", builder =>
+    {
+        builder.WithOrigins("https://your-ui-domain.com") // e.g., http://localhost:3000
+               .AllowAnyMethod()
+               .AllowAnyHeader()
+               .AllowCredentials();
+    });
+});
+
+builder.Services.AddAuthentication(/* your scheme */);
+builder.Services.AddAuthorization();
+
+var app = builder.Build();
+
+// ------------------------------------------
+// Preflight OPTIONS Middleware — ADD THIS
+// ------------------------------------------
+app.Use(async (context, next) =>
+{
+    if (context.Request.Method == HttpMethods.Options)
+    {
+        context.Response.StatusCode = StatusCodes.Status204NoContent;
+        await context.Response.CompleteAsync();
+        return;
+    }
+
+    await next();
+});
+
+// ------------------------------------------
+// CORS Middleware — BEFORE auth
+// ------------------------------------------
+app.UseCors("MyCorsPolicy");
+
+// Now Authentication and Authorization
+app.UseAuthentication();
+app.UseAuthorization();
+
+// Map endpoints
+app.MapControllers(); // or app.MapFallbackTo... etc.
+
+app.Run();
+
+
+---
+
+Why This Works
+
+OPTIONS requests don't have tokens — so they must skip [Authorize].
+
+The middleware catches them early and responds with a simple 204 (No Content).
+
+CORS headers are sent properly because UseCors is before UseAuthentication.
+
+
+
+---
+
+Let me know if you're using Startup.cs style (older ASP.NET Core), and I’ll show that version too.
+
