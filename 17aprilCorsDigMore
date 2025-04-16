@@ -1,0 +1,111 @@
+Perfect — you're using React as frontend and ASP.NET Core 8 as the backend. That helps.
+
+Let’s walk through a working CORS + [Authorize] + React + .NET 8 setup from scratch.
+
+
+---
+
+1. Backend: Full Working Program.cs (ASP.NET Core 8)
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Add CORS
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowReactApp", policy =>
+    {
+        policy.WithOrigins("http://localhost:3000") // React dev server
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials(); // Needed only if you're using cookies
+    });
+});
+
+builder.Services.AddControllers();
+builder.Services.AddAuthentication("Bearer") // Or whatever you're using (e.g., Azure B2C)
+    .AddJwtBearer("Bearer", options =>
+    {
+        options.Authority = "https://your-auth-provider.com";
+        options.Audience = "your-api-audience";
+    });
+
+builder.Services.AddAuthorization();
+
+var app = builder.Build();
+
+// CORS middleware MUST be before Auth
+app.UseCors("AllowReactApp");
+
+// Optional: allow preflight OPTIONS requests
+app.Use(async (context, next) =>
+{
+    if (context.Request.Method == "OPTIONS")
+    {
+        context.Response.StatusCode = 204;
+        return;
+    }
+    await next();
+});
+
+app.UseAuthentication();
+app.UseAuthorization();
+
+app.MapControllers();
+
+app.Run();
+
+
+---
+
+2. Controller Sample
+
+[ApiController]
+[Route("api/[controller]")]
+public class TestController : ControllerBase
+{
+    [HttpGet("ping")]
+    [AllowAnonymous]
+    public IActionResult Ping() => Ok("pong");
+
+    [HttpGet("secure")]
+    [Authorize]
+    public IActionResult SecureData() => Ok("This is protected data");
+}
+
+
+---
+
+3. React Frontend Fetch Call (JWT Example)
+
+const token = localStorage.getItem("token");
+
+fetch("http://localhost:5000/api/test/secure", {
+  method: "GET",
+  headers: {
+    "Content-Type": "application/json",
+    "Authorization": `Bearer ${token}`
+  },
+})
+.then(res => res.json())
+.then(data => console.log(data))
+.catch(err => console.error(err));
+
+
+---
+
+4. Troubleshooting Checklist
+
+
+---
+
+If it still doesn't work, can you paste your:
+
+Program.cs
+
+One controller with [Authorize]
+
+Exact error message from browser dev tools (network tab or console)
+
+
+And I’ll pinpoint the fix for you.
+
