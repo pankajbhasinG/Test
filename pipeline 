@@ -1,0 +1,82 @@
+Perfect! You want to automate creating a new branch with the same file structure after a PR is merged, using Azure DevOps CI pipeline.
+
+Yes, it's doable in Azure DevOps using a YAML pipeline that runs after a PR is merged (usually to main or develop), and uses a Git command to create and push a new branch.
+
+
+---
+
+✅ Step-by-Step: Azure DevOps Pipeline to Create a New Branch After PR Merge
+
+🔹 1. Set Up Your Trigger
+
+Trigger the pipeline only on merge to main (i.e., after a PR completes):
+
+trigger:
+  branches:
+    include:
+      - main
+
+> You can change main to whatever branch you typically merge PRs into.
+
+
+
+
+---
+
+🔹 2. Pipeline YAML: Create and Push a New Branch
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+  - task: Checkout@1
+    inputs:
+      persistCredentials: true   # Important to push changes
+      clean: true
+
+  - script: |
+      git config user.name "azure-pipelines"
+      git config user.email "azure-pipelines@dev.azure.com"
+      
+      BRANCH_NAME="post-pr-branch-$(date +%s)"
+      
+      echo "Creating new branch: $BRANCH_NAME"
+
+      git checkout -b $BRANCH_NAME
+      git push origin $BRANCH_NAME
+    displayName: 'Create and Push New Branch'
+
+
+---
+
+🔐 Notes
+
+persistCredentials: true is crucial. It allows the agent to reuse the OAuth token Azure provides, so it can push to your repo.
+
+The branch name includes a timestamp for uniqueness, but you can customize this.
+
+
+
+---
+
+🔁 Optional Enhancements
+
+Use PR metadata (e.g., PR number or source branch name)? You’ll need to trigger the pipeline via the PR pipeline completion and use System.PullRequest.SourceBranch.
+
+Restrict to only PR merges? Add a condition like this:
+
+
+condition: and(succeeded(), eq(variables['Build.Reason'], 'IndividualCI'))
+
+
+---
+
+Would you like this to:
+
+Run only for certain PRs (e.g., labels or branches)?
+
+Use a fixed name for the branch instead of a timestamp?
+
+
+Let me know your preference and I’ll tailor the YAML exactly for that use case.
+
