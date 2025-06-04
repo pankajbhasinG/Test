@@ -1,0 +1,121 @@
+Great question, Pankaj! If you're using Classic Pipelines in Azure DevOps (i.e. UI-based pipelines, not YAML), here's how you can automate the creation of a new branch after a Pull Request (PR) is merged.
+
+
+---
+
+✅ Goal: After a PR is merged to main, automatically create and push a new branch with the same file structure.
+
+
+---
+
+🔧 Step-by-Step in Classic Pipelines
+
+🔹 Step 1: Create a New Classic Build Pipeline
+
+1. Go to Pipelines > Pipelines.
+
+
+2. Click "New Pipeline" > "Use the Classic Editor".
+
+
+3. Select your repository (Azure Repos Git).
+
+
+4. Choose "Start with an empty job".
+
+
+
+
+---
+
+🔹 Step 2: Set the Trigger
+
+1. Go to the Triggers tab.
+
+
+2. Enable "Enable continuous integration".
+
+
+3. In branch filters, include only main (or whichever branch you merge PRs into).
+
+
+4. This ensures the pipeline runs only after a PR is merged into that branch.
+
+
+
+
+---
+
+🔹 Step 3: Add a Script Task to Create the Branch
+
+1. In the pipeline Tasks tab, add a new task:
+"Command Line" or "Bash" (if using a Linux agent).
+
+
+2. Script to use:
+
+
+
+git config user.name "azure-pipelines"
+git config user.email "azure-pipelines@dev.azure.com"
+
+BRANCH_NAME="post-pr-branch-$(date +%s)"
+
+echo "Creating and pushing branch: $BRANCH_NAME"
+
+git checkout -b $BRANCH_NAME
+git push origin $BRANCH_NAME
+
+3. Important: In the "Checkout" step (added by default), make sure:
+
+Clean is checked ✅.
+
+Persist credentials is enabled ✅ (This is what lets it push to the repo).
+
+
+
+
+To check this:
+
+Click on the "Get Sources" step.
+
+Scroll to "Clean" and "Checkout files from the workspace" — enable both.
+
+Enable "Allow scripts to access OAuth token" under "Agent job" → Additional options.
+
+
+
+---
+
+🔹 Step 4: Save and Run the Pipeline
+
+Now, when you merge a PR into main, this pipeline will run and create a new branch automatically.
+
+
+---
+
+✅ Example Result
+
+If a PR is merged at 11:30:12 UTC, the new branch might be:
+
+post-pr-branch-1717506612
+
+You can see it immediately under Repos > Branches.
+
+
+---
+
+🔐 Permissions Note:
+
+If your repo uses branch protections, make sure your pipeline identity (usually "Project Collection Build Service") has permission to push branches.
+
+
+---
+
+Would you like to:
+
+Name the new branch based on the PR source branch?
+
+Add conditions (e.g., run only when PRs have a specific tag/label)? Let me know and I’ll refine this further!
+
+
