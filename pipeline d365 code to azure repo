@@ -1,0 +1,172 @@
+Awesome, Pankaj! Here's a complete working solution to automatically export your D365 F&O model code from a Tier-1 VM and push it to an Azure DevOps Git repository via CI.
+
+
+---
+
+✅ What You’ll Get:
+
+A PowerShell script that copies your custom model from D365's local packages folder
+
+Pushes it to a new branch in your Azure DevOps Git repo
+
+A Classic Pipeline setup or YAML option to run this on schedule, after a PR merge, or manually
+
+
+
+---
+
+🎯 Prerequisites (Once Only)
+
+1. ✅ Self-Hosted Agent on Tier-1 DevBox
+
+Download agent:
+Azure DevOps > Project Settings > Agent Pools > New Agent
+
+Install on your Tier-1 Dev VM
+
+Make sure the agent:
+
+Runs as a service
+
+Can access K:\AosService\PackagesLocalDirectory
+
+Has Git installed
+
+Has permissions to push to your Azure DevOps Git repo
+
+
+
+
+---
+
+2. ✅ Create a Personal Access Token (PAT)
+
+You need a Git push PAT for authentication:
+
+Go to: User Settings > Personal Access Tokens
+
+Scope: Code (Read & Write)
+
+Save the token securely (you’ll add it to pipeline secrets)
+
+
+
+---
+
+📝 Step 1: PowerShell Script (export-d365-model.ps1)
+
+# VARIABLES
+$repoUrl = "https://<yourorg>@dev.azure.com/<yourorg>/<project>/_git/<repo>"  # use PAT format if needed
+$patToken = "$(GitPAT)"  # Secure variable in pipeline
+$modelName = "MyModel"   # Replace with your model name
+$modelSource = "K:\AosService\PackagesLocalDirectory\$modelName"
+$branch = "model-export-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+$tempDir = "C:\Git\D365ModelTemp"
+
+# CLEAN TEMP
+if (Test-Path $tempDir) { Remove-Item -Recurse -Force $tempDir }
+New-Item -ItemType Directory -Path $tempDir | Out-Null
+
+# COPY MODEL FILES
+Copy-Item -Recurse -Path "$modelSource\*" -Destination $tempDir
+
+# INIT GIT
+Set-Location $tempDir
+git init
+git config user.email "azure-pipelines@dev.azure.com"
+git config user.name "Azure Pipelines"
+
+# AUTHENTICATE USING PAT
+$repoWithAuth = $repoUrl -replace "https://", "https://:$patToken@"
+
+git remote add origin $repoWithAuth
+git checkout -b $branch
+git add .
+git commit -m "Exported $modelName from D365 on $(Get-Date)"
+git push origin $branch
+
+
+---
+
+🧪 Step 2: Classic Pipeline Setup
+
+🎯 Trigger: after PR merged or manual
+
+1. Go to Pipelines > New pipeline > Classic Editor
+
+
+2. Select your Azure Repos Git > "Start with an Empty Job"
+
+
+3. Agent Pool: Select the Tier-1 self-hosted agent
+
+
+4. Add a PowerShell Task
+
+Script path: path to export-d365-model.ps1
+
+Arguments: none
+
+
+
+
+🛡 Secrets & Variables
+
+1. Go to the "Variables" tab
+
+
+2. Add a secret variable:
+
+Name: GitPAT
+
+Value: your personal access token
+
+Mark it as secret
+
+
+
+
+
+---
+
+💡 Optional: Trigger After PR Merge
+
+If you want this to run only when code is merged to main:
+
+Go to Triggers tab
+
+Enable "Enable continuous integration"
+
+Add branch filter: main
+
+
+
+---
+
+✅ Final Result
+
+Every time you run this:
+
+It copies the current model code
+
+Creates a timestamped Git branch
+
+Pushes that branch to your Azure DevOps Git repo
+
+
+
+---
+
+📦 Extras (Optional)
+
+Would you also like to:
+
+Build a deployable package automatically?
+
+Deploy the code to another Tier-2/UAT environment?
+
+Convert this into a YAML-based pipeline with environment settings?
+
+
+Let me know and I’ll expand with those too.
+
