@@ -1,0 +1,191 @@
+using System; using System.Collections.Generic; using System.IO; using System.Linq; using ClosedXML.Excel; // Install-Package ClosedXML (Free & Open Source)
+
+class Teacher { public string Name { get; set; } public List<string> Subjects { get; set; } = new List<string>(); }
+
+class SubjectAssignment { public string Subject { get; set; } public Teacher AssignedTeacher { get; set; } }
+
+class Timetable { public string ClassName { get; set; } public SubjectAssignment[,] Schedule { get; set; } = new SubjectAssignment[5, 6]; }
+
+class TimetableApp { static List<Teacher> teachers = new List<Teacher> { new Teacher { Name = "Mr. Sharma", Subjects = new List<string> { "Math", "Physics" } }, new Teacher { Name = "Ms. Gupta", Subjects = new List<string> { "English", "History" } }, new Teacher { Name = "Dr. Verma", Subjects = new List<string> { "Biology", "Chemistry" } } };
+
+static List<Timetable> timetables = new List<Timetable>
+{
+    new Timetable { ClassName = "Class 10A" },
+    new Timetable { ClassName = "Class 10B" }
+};
+
+static void Main()
+{
+    bool running = true;
+    while (running)
+    {
+        Console.WriteLine("\n--- School Timetable ---");
+        Console.WriteLine("1. Add Subject to Class");
+        Console.WriteLine("2. View Class Timetable");
+        Console.WriteLine("3. Delete Slot from Class");
+        Console.WriteLine("4. Export All Timetables to Excel");
+        Console.WriteLine("5. Exit");
+        Console.Write("Select option: ");
+
+        switch (Console.ReadLine())
+        {
+            case "1": AddSubject(); break;
+            case "2": ViewTimetable(); break;
+            case "3": DeleteSlot(); break;
+            case "4": ExportTimetablesToExcel(); break;
+            case "5": running = false; break;
+            default: Console.WriteLine("Invalid choice."); break;
+        }
+    }
+}
+
+static void AddSubject()
+{
+    Timetable t = SelectClass();
+    if (t == null) return;
+
+    Console.Write("Enter day (Monday-Friday): ");
+    string day = Console.ReadLine().Trim().ToLower();
+    int dayIndex = GetDayIndex(day);
+    if (dayIndex == -1) { Console.WriteLine("Invalid day."); return; }
+
+    Console.Write("Enter period (1-6): ");
+    if (!int.TryParse(Console.ReadLine(), out int period) || period < 1 || period > 6)
+    {
+        Console.WriteLine("Invalid period."); return;
+    }
+
+    Console.Write("Enter subject: ");
+    string subject = Console.ReadLine();
+
+    Console.Write("Enter teacher name: ");
+    string teacherName = Console.ReadLine();
+    var teacher = teachers.FirstOrDefault(t => t.Name.Equals(teacherName, StringComparison.OrdinalIgnoreCase));
+
+    if (teacher == null) { Console.WriteLine("Teacher not found."); return; }
+    if (!teacher.Subjects.Contains(subject, StringComparer.OrdinalIgnoreCase))
+    {
+        Console.WriteLine($"{teacher.Name} is not qualified to teach {subject}.");
+        return;
+    }
+
+    if (t.Schedule[dayIndex, period - 1] != null)
+    {
+        Console.WriteLine("Slot already occupied in this class."); return;
+    }
+
+    foreach (var tt in timetables)
+    {
+        if (tt.Schedule[dayIndex, period - 1]?.AssignedTeacher?.Name == teacher.Name)
+        {
+            Console.WriteLine($"{teacher.Name} is already assigned in {tt.ClassName} at this time.");
+            return;
+        }
+    }
+
+    t.Schedule[dayIndex, period - 1] = new SubjectAssignment { Subject = subject, AssignedTeacher = teacher };
+    Console.WriteLine("Subject assigned.");
+}
+
+static void ViewTimetable()
+{
+    Timetable t = SelectClass();
+    if (t == null) return;
+
+    string[] days = { "Monday", "Tuesday", "Wednesday", "Thursday", "Friday" };
+    Console.WriteLine($"\nTimetable for {t.ClassName}:");
+    Console.WriteLine("Period | " + string.Join(" | ", days));
+    Console.WriteLine(new string('-', 90));
+
+    for (int p = 0; p < 6; p++)
+    {
+        Console.Write($"  {p + 1}    | ");
+        for (int d = 0; d < 5; d++)
+        {
+            var entry = t.Schedule[d, p];
+            Console.Write(entry != null ? $"{entry.Subject}({entry.AssignedTeacher.Name[0]})".PadRight(15) : "Free".PadRight(15));
+            Console.Write("| ");
+        }
+        Console.WriteLine();
+    }
+}
+
+static void DeleteSlot()
+{
+    Timetable t = SelectClass();
+    if (t == null) return;
+
+    Console.Write("Enter day (Monday-Friday): ");
+    string day = Console.ReadLine().Trim().ToLower();
+    int dayIndex = GetDayIndex(day);
+    if (dayIndex == -1) { Console.WriteLine("Invalid day."); return; }
+
+    Console.Write("Enter period (1-6): ");
+    if (!int.TryParse(Console.ReadLine(), out int period) || period < 1 || period > 6)
+    {
+        Console.WriteLine("Invalid period."); return;
+    }
+
+    t.Schedule[dayIndex, period - 1] = null;
+    Console.WriteLine("Slot cleared.");
+}
+
+static void ExportTimetablesToExcel()
+{
+    string[] days = { "Monday", "Tuesday", "Wednesday", "Thursday", "Friday" };
+    var workbook = new XLWorkbook();
+
+    foreach (var t in timetables)
+    {
+        var ws = workbook.Worksheets.Add(t.ClassName);
+        ws.Cell(1, 1).Value = "Period";
+        for (int i = 0; i < 5; i++)
+            ws.Cell(1, i + 2).Value = days[i];
+
+        for (int p = 0; p < 6; p++)
+        {
+            ws.Cell(p + 2, 1).Value = "Period " + (p + 1);
+            for (int d = 0; d < 5; d++)
+            {
+                var entry = t.Schedule[d, p];
+                ws.Cell(p + 2, d + 2).Value = entry != null ? $"{entry.Subject} ({entry.AssignedTeacher.Name})" : "Free";
+            }
+        }
+    }
+
+    string path = Path.Combine(Directory.GetCurrentDirectory(), "AllClassTimetables.xlsx");
+    workbook.SaveAs(path);
+    Console.WriteLine($"Excel exported to: {path}");
+}
+
+static Timetable SelectClass()
+{
+    Console.WriteLine("Available Classes:");
+    for (int i = 0; i < timetables.Count; i++)
+    {
+        Console.WriteLine($"{i + 1}. {timetables[i].ClassName}");
+    }
+    Console.Write("Select class number: ");
+    if (int.TryParse(Console.ReadLine(), out int choice) && choice >= 1 && choice <= timetables.Count)
+    {
+        return timetables[choice - 1];
+    }
+    Console.WriteLine("Invalid selection.");
+    return null;
+}
+
+static int GetDayIndex(string day)
+{
+    return day switch
+    {
+        "monday" => 0,
+        "tuesday" => 1,
+        "wednesday" => 2,
+        "thursday" => 3,
+        "friday" => 4,
+        _ => -1
+    };
+}
+
+}
+
