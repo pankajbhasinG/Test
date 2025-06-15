@@ -1,0 +1,133 @@
+Here’s a C# example that shows how to publish events to Azure Event Grid using a custom topic, and how to handle those events using an Azure Function.
+
+
+---
+
+🧱 1. Setup Summary
+
+You'll need:
+
+An Azure Event Grid custom topic
+
+An Azure Function as the subscriber (WebHook endpoint)
+
+A C# client app to publish events
+
+
+
+---
+
+✅ Step 1: Create a Custom Topic in Azure
+
+Use Azure Portal or CLI:
+
+az eventgrid topic create \
+  --name myCustomTopic \
+  --resource-group myResourceGroup \
+  --location westus2
+
+Get the endpoint URL and access key:
+
+az eventgrid topic show --name myCustomTopic --resource-group myResourceGroup
+az eventgrid topic key list --name myCustomTopic --resource-group myResourceGroup
+
+
+---
+
+✅ Step 2: Publish Events from a C# Console App
+
+using System;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Text;
+using System.Threading.Tasks;
+using Newtonsoft.Json;
+
+class Program
+{
+    private const string topicEndpoint = "https://mycustomtopic.westus2-1.eventgrid.azure.net/api/events";
+    private const string topicKey = "<your-topic-key>";
+
+    static async Task Main(string[] args)
+    {
+        var client = new HttpClient();
+        client.DefaultRequestHeaders.Add("aeg-sas-key", topicKey);
+
+        var eventPayload = new[]
+        {
+            new {
+                id = Guid.NewGuid().ToString(),
+                eventType = "MyApp.DataCreated",
+                subject = "/myapp/objects/123",
+                eventTime = DateTime.UtcNow,
+                data = new {
+                    message = "Hello from C# Event Publisher!"
+                },
+                dataVersion = "1.0"
+            }
+        };
+
+        var content = new StringContent(JsonConvert.SerializeObject(eventPayload), Encoding.UTF8, "application/json");
+
+        var response = await client.PostAsync(topicEndpoint, content);
+        Console.WriteLine($"Status: {response.StatusCode}");
+    }
+}
+
+> ✅ Install NuGet: Newtonsoft.Json
+
+
+
+
+---
+
+✅ Step 3: Handle Events in an Azure Function
+
+This is an example Azure Function (v4, C#):
+
+using Microsoft.Azure.Functions.Worker;
+using Microsoft.Extensions.Logging;
+using Azure.Messaging.EventGrid;
+using System.Text.Json;
+
+public class EventGridHandler
+{
+    private readonly ILogger _logger;
+
+    public EventGridHandler(ILoggerFactory loggerFactory)
+    {
+        _logger = loggerFactory.CreateLogger<EventGridHandler>();
+    }
+
+    [Function("EventGridHandler")]
+    public void Run([EventGridTrigger] EventGridEvent eventGridEvent)
+    {
+        _logger.LogInformation($"Event received: {eventGridEvent.EventType}");
+        _logger.LogInformation($"Data: {eventGridEvent.Data.ToString()}");
+
+        var data = JsonSerializer.Deserialize<JsonElement>(eventGridEvent.Data.ToString());
+        _logger.LogInformation($"Message: {data.GetProperty("message").GetString()}");
+    }
+}
+
+> 📦 Make sure to install the Azure.Messaging.EventGrid package.
+
+
+
+
+---
+
+🔗 Step 4: Subscribe Azure Function to Custom Topic
+
+Use Azure CLI or Portal to create a subscription from the custom topic to the Azure Function URL.
+
+az eventgrid event-subscription create \
+  --name myFunctionSub \
+  --source-resource-id /subscriptions/<sub-id>/resourceGroups/myResourceGroup/providers/Microsoft.EventGrid/topics/myCustomTopic \
+  --endpoint https://<functionapp>.azurewebsites.net/runtime/webhooks/EventGrid?functionName=EventGridHandler
+
+
+---
+
+Would you like help deploying the Azure Function or setting this up in Visual Studio or VS Code?
+
