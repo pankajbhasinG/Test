@@ -1,0 +1,240 @@
+Great! Let's create an L4 Design Document for the module:
+👉 User Login using OAuth and storing tokens (assume Azure AD B2C for authentication and ASP.NET Core Web API backend).
+
+
+---
+
+📝 L4 Design Document – User Login via Azure AD B2C
+
+1. Title & Metadata
+
+Module: User Authentication – OAuth Login (Azure AD B2C)
+
+Author: Pankaj Bhasin
+
+Date: 16-Jun-2025
+
+Version: 1.0
+
+Reviewed By: [Reviewer Name]
+
+
+
+---
+
+2. Objective
+
+Enable secure user login using OAuth 2.0 via Azure AD B2C, validate JWT tokens in the backend, and store the user’s tokens for future API access.
+
+
+---
+
+3. Assumptions & Dependencies
+
+Azure AD B2C is configured with user flows
+
+ASP.NET Core 7 Web API
+
+Dapper for DB interaction
+
+SQL Server as data store
+
+Users are pre-registered in B2C or social logins are enabled
+
+
+
+---
+
+4. Design Overview
+
+🔁 Login Flow
+
+1. Frontend redirects user to Azure B2C login
+
+
+2. User logs in and receives ID token + Access token
+
+
+3. Frontend sends ID token to Web API
+
+
+4. API validates the JWT using B2C public keys
+
+
+5. If valid, user record is stored/retrieved in the DB
+
+
+6. Tokens (or identifiers) are saved for reference/logging
+
+
+
+
+---
+
+5. Class Design
+
+public class AuthController : ControllerBase
+{
+    [HttpPost("api/auth/login")]
+    public async Task<IActionResult> Login([FromBody] TokenRequest request);
+}
+
+public class TokenValidatorService
+{
+    public ClaimsPrincipal ValidateToken(string idToken);
+}
+
+public class UserService
+{
+    public Task<User> GetOrCreateUserAsync(ClaimsPrincipal userClaims);
+}
+
+public class UserRepository
+{
+    public Task<User> GetUserByEmailAsync(string email);
+    public Task CreateUserAsync(User user);
+}
+
+
+---
+
+6. Method Details
+
+Login(TokenRequest request)
+
+Input: { string IdToken }
+
+Output: 200 OK with user details / 401 Unauthorized
+
+Steps:
+
+Validate JWT
+
+Parse claims (email, name, sub)
+
+Check if user exists in DB
+
+If not, create new user
+
+Return user info
+
+
+
+ValidateToken(string idToken)
+
+Uses Microsoft.IdentityModel.Tokens to validate against Azure B2C public keys
+
+Returns ClaimsPrincipal or throws SecurityTokenException
+
+
+
+---
+
+7. Database Design
+
+Table: Users | Column       | Type        | Notes                      | |--------------|-------------|----------------------------| | Id           | GUID        | Primary Key                | | Email        | NVARCHAR(100)| Unique, required           | | DisplayName  | NVARCHAR(100)|                            | | B2CId        | NVARCHAR(200)| Maps to B2C sub claim    | | CreatedAt    | DATETIME    | Default = GETDATE()        |
+
+
+---
+
+8. API Contract
+
+POST /api/auth/login
+
+Request:
+
+{
+  "idToken": "<JWT received from B2C>"
+}
+
+Response:
+
+{
+  "userId": "guid",
+  "email": "user@example.com",
+  "displayName": "John Doe"
+}
+
+Errors:
+
+401 Unauthorized: Invalid token
+
+500 Internal Server Error: DB issues
+
+
+
+---
+
+9. Security Considerations
+
+Token is validated using Azure AD B2C's JWKS endpoint
+
+No token is stored permanently in DB (only subject ID & email)
+
+HTTPS only
+
+Input is sanitized
+
+
+
+---
+
+10. Configuration
+
+appsettings.json:
+
+{
+  "AzureAdB2C": {
+    "Instance": "https://<tenant>.b2clogin.com",
+    "ClientId": "<client-id>",
+    "Tenant": "<tenant-name>",
+    "SignUpSignInPolicyId": "B2C_1_signin"
+  }
+}
+
+Startup Registration:
+
+services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddMicrosoftIdentityWebApi(Configuration.GetSection("AzureAdB2C"));
+
+
+---
+
+11. Logging & Monitoring
+
+Log each login attempt (success/fail)
+
+Track unexpected claims or expired tokens
+
+Store logs in Application Insights or Seq
+
+
+
+---
+
+12. Future Enhancements
+
+Store refresh token securely (if long-term access needed)
+
+Add multi-factor authentication support
+
+Add role-based access control from claims
+
+
+
+---
+
+13. References
+
+Azure AD B2C Docs
+
+JWT Token Validation in ASP.NET Core
+
+Dapper ORM
+
+
+
+---
+
+Would you like this as a downloadable Word or Markdown file too? Or want me to customize it for a different auth provider (like Google, Facebook, etc.)?
+
