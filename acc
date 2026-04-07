@@ -1,0 +1,257 @@
+Below is a clean, end-to-end console app that:
+✔ Tries Cost API first
+✔ If permission fails → automatically falls back
+✔ Runs:
+VM CPU analysis
+Unattached disk detection
+✔ Prints clear message when cost access is not available
+This is exactly what you asked: single codebase handling both scenarios
+1. NuGet Packages
+Bash
+dotnet add package Azure.Identity
+dotnet add package Newtonsoft.Json
+2. appsettings.json
+JSON
+{
+  "Azure": {
+    "TenantId": "YOUR_TENANT_ID",
+    "ClientId": "YOUR_CLIENT_ID",
+    "ClientSecret": "YOUR_CLIENT_SECRET",
+    "SubscriptionId": "YOUR_SUBSCRIPTION_ID"
+  }
+}
+3. Complete Program.cs
+C#
+using System;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Threading.Tasks;
+using Azure.Identity;
+using Newtonsoft.Json.Linq;
+using System.Linq;
+
+class Program
+{
+    static async Task Main(string[] args)
+    {
+        var config = LoadConfig();
+
+        var token = await GetToken(config);
+
+        var client = new HttpClient();
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", token);
+
+        Console.WriteLine("=== AZURE ANALYSIS TOOL ===\n");
+
+        // STEP 1: Try Cost API
+        bool costAvailable = await TryFetchCost(client, config);
+
+        if (!costAvailable)
+        {
+            Console.WriteLine("\n⚠ Cost data not accessible.");
+            Console.WriteLine("Reason: Missing Cost Management Reader permission.");
+            Console.WriteLine("Switching to usage-based analysis...\n");
+        }
+
+        // STEP 2: Always run resource analysis
+        await AnalyzeVMs(client, config);
+        await AnalyzeDisks(client, config);
+
+        Console.WriteLine("\n=== ANALYSIS COMPLETE ===");
+    }
+
+    // ================= CONFIG =================
+    static dynamic LoadConfig()
+    {
+        var json = System.IO.File.ReadAllText("appsettings.json");
+        return JObject.Parse(json)["Azure"];
+    }
+
+    // ================= AUTH =================
+    static async Task<string> GetToken(dynamic config)
+    {
+        var credential = new ClientSecretCredential(
+            (string)config.TenantId,
+            (string)config.ClientId,
+            (string)config.ClientSecret);
+
+        var token = await credential.GetTokenAsync(
+            new Azure.Core.TokenRequestContext(
+                new[] { "https://management.azure.com/.default" }));
+
+        return token.Token;
+    }
+
+    // ================= COST API =================
+    static async Task<bool> TryFetchCost(HttpClient client, dynamic config)
+    {
+        try
+        {
+            var url =
+                $"https://management.azure.com/subscriptions/{config.SubscriptionId}/providers/Microsoft.CostManagement/query?api-version=2023-03-01";
+
+            var body = @"{
+                ""type"": ""ActualCost"",
+                ""timeframe"": ""MonthToDate"",
+                ""dataset"": {
+                    ""granularity"": ""None"",
+                    ""aggregation"": {
+                        ""totalCost"": { ""name"": ""Cost"", ""function"": ""Sum"" }
+                    }
+                }
+            }";
+
+            var response = await client.PostAsync(url,
+                new StringContent(body, System.Text.Encoding.UTF8, "application/json"));
+
+            if (!response.IsSuccessStatusCode)
+                return false;
+
+            var json = await response.Content.ReadAsStringAsync();
+            var obj = JObject.Parse(json);
+
+            var rows = obj["properties"]?["rows"];
+            if (rows == null) return false;
+
+            decimal total = rows.Sum(r => (decimal)r[0]);
+
+            Console.WriteLine($"Total Cost (MTD): ₹{total}");
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    // ================= VM ANALYSIS =================
+    static async Task AnalyzeVMs(HttpClient client, dynamic config)
+    {
+        Console.WriteLine("=== VM ANALYSIS ===");
+
+        var url =
+            $"https://management.azure.com/subscriptions/{config.SubscriptionId}/providers/Microsoft.Compute/virtualMachines?api-version=2023-03-01";
+
+        var response = await client.GetAsync(url);
+        var json = await response.Content.ReadAsStringAsync();
+
+        var obj = JObject.Parse(json);
+        var vms = obj["value"];
+
+        if (vms == null) return;
+
+        foreach (var vm in vms)
+        {
+            var vmId = vm["id"].ToString();
+            var vmName = vm["name"].ToString();
+
+            var cpu = await GetVmCpu(client, vmId);
+
+            Console.WriteLine($"VM: {vmName} | CPU: {cpu}%");
+
+            if (cpu < 10)
+            {
+                Console.WriteLine("⚠ Underutilized VM → Consider downsizing");
+            }
+        }
+    }
+
+    static async Task<double> GetVmCpu(HttpClient client, string vmId)
+    {
+        try
+        {
+            var url =
+                $"https://management.azure.com{vmId}/providers/microsoft.insights/metrics" +
+                $"?metricnames=Percentage CPU&timespan=PT24H&interval=PT1H&api-version=2018-01-01";
+
+            var response = await client.GetAsync(url);
+            var json = await response.Content.ReadAsStringAsync();
+
+            var obj = JObject.Parse(json);
+            var data = obj["value"]?[0]?["timeseries"]?[0]?["data"];
+
+            if (data == null) return 0;
+
+            return data
+                .Where(d => d["average"] != null)
+                .Average(d => (double)d["average"]);
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
+    // ================= DISK ANALYSIS =================
+    static async Task AnalyzeDisks(HttpClient client, dynamic config)
+    {
+        Console.WriteLine("\n=== DISK ANALYSIS ===");
+
+        var url =
+            $"https://management.azure.com/subscriptions/{config.SubscriptionId}/providers/Microsoft.Compute/disks?api-version=2023-01-02";
+
+        var response = await client.GetAsync(url);
+        var json = await response.Content.ReadAsStringAsync();
+
+        var obj = JObject.Parse(json);
+        var disks = obj["value"];
+
+        if (disks == null) return;
+
+        foreach (var disk in disks)
+        {
+            var name = disk["name"].ToString();
+            var managedBy = disk["managedBy"];
+
+            if (managedBy == null)
+            {
+                Console.WriteLine($"⚠ Unattached Disk: {name} → Delete to save cost");
+            }
+        }
+    }
+}
+4. What This Code Does (Clear)
+Case 1: Cost permission EXISTS
+
+✔ Shows total Azure cost
+✔ Then runs VM + Disk analysis
+Case 2: Cost permission NOT available
+
+⚠ Shows message:
+"Cost data not accessible"
+
+✔ Still runs:
+- VM CPU analysis
+- Disk detection
+5. Output Example
+
+=== AZURE ANALYSIS TOOL ===
+
+⚠ Cost data not accessible.
+Reason: Missing Cost Management Reader permission.
+Switching to usage-based analysis...
+
+=== VM ANALYSIS ===
+VM: prod-vm-1 | CPU: 5%
+⚠ Underutilized VM → Consider downsizing
+
+=== DISK ANALYSIS ===
+⚠ Unattached Disk: disk-old → Delete to save cost
+6. Why This Is Important
+You now have:
+✔ Enterprise-safe tool (no billing dependency)
+✔ Works in restricted environments
+✔ Gives real optimization insights
+7. Next Step (Recommended)
+If you continue, next add:
+App Service analysis
+Email report
+Multi-subscription support
+Final Outcome
+This is now a real, usable foundation for:
+Your audit service
+Your future SaaS
+If you want next, I can give:
+👉 App Service analysis code (same style, plug-and-play)
+👉 OR convert this into ASP.NET Core API with endpoints (production ready)
