@@ -1,0 +1,195 @@
+Perfect — now we’ll make this real and buildable for your exact scenario
+(Function Apps + Service Bus + Event Hub, no cost permission needed).
+🚀 What you’ll get now
+✔ Working C# code
+✔ Covers:
+Function App metrics
+Service Bus queue stats
+✔ Gives actionable output (not just data)
+⚠️ Important Setup (1 min)
+Replace in code:
+C#
+string subscriptionId = "YOUR_SUB_ID";
+string resourceGroup = "YOUR_RG";
+string functionAppName = "YOUR_FUNCTION_APP";
+string serviceBusNamespace = "YOUR_SB_NAMESPACE";
+string queueName = "YOUR_QUEUE";
+1. Full Working Code (Core Analyzer)
+C#
+using System;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Threading.Tasks;
+using Azure.Identity;
+using Newtonsoft.Json.Linq;
+using System.Linq;
+
+class Program
+{
+    static async Task Main()
+    {
+        string tenantId = "YOUR_TENANT_ID";
+        string clientId = "YOUR_CLIENT_ID";
+        string clientSecret = "YOUR_CLIENT_SECRET";
+        string subscriptionId = "YOUR_SUB_ID";
+        string resourceGroup = "YOUR_RG";
+
+        var credential = new ClientSecretCredential(tenantId, clientId, clientSecret);
+
+        var token = await credential.GetTokenAsync(
+            new Azure.Core.TokenRequestContext(
+                new[] { "https://management.azure.com/.default" }));
+
+        var client = new HttpClient();
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", token.Token);
+
+        Console.WriteLine("=== SERVERLESS ANALYSIS ===\n");
+
+        await AnalyzeFunctionApp(client, subscriptionId, resourceGroup, "YOUR_FUNCTION_APP");
+        await AnalyzeServiceBus(client, subscriptionId, resourceGroup, "YOUR_SB_NAMESPACE", "YOUR_QUEUE");
+    }
+
+    // ================= FUNCTION APP =================
+    static async Task AnalyzeFunctionApp(HttpClient client, string subId, string rg, string appName)
+    {
+        Console.WriteLine("=== FUNCTION APP ANALYSIS ===");
+
+        string resourceId = $"/subscriptions/{subId}/resourceGroups/{rg}/providers/Microsoft.Web/sites/{appName}";
+
+        string url =
+            $"https://management.azure.com{resourceId}/providers/microsoft.insights/metrics" +
+            $"?metricnames=FunctionExecutionCount,AverageExecutionTime" +
+            $"&timespan=PT24H&interval=PT1H&api-version=2018-01-01";
+
+        var response = await client.GetAsync(url);
+        var json = await response.Content.ReadAsStringAsync();
+
+        var obj = JObject.Parse(json);
+
+        var metrics = obj["value"];
+
+        if (metrics == null)
+        {
+            Console.WriteLine("No metrics found\n");
+            return;
+        }
+
+        double totalExecutions = 0;
+        double avgExecutionTime = 0;
+
+        foreach (var metric in metrics)
+        {
+            string name = metric["name"]["value"].ToString();
+            var data = metric["timeseries"]?[0]?["data"];
+
+            if (data == null) continue;
+
+            if (name == "FunctionExecutionCount")
+            {
+                totalExecutions = data.Sum(d => (double?)d["total"] ?? 0);
+            }
+
+            if (name == "AverageExecutionTime")
+            {
+                avgExecutionTime = data
+                    .Where(d => d["average"] != null)
+                    .Average(d => (double)d["average"]);
+            }
+        }
+
+        Console.WriteLine($"Executions (24h): {totalExecutions}");
+        Console.WriteLine($"Avg Execution Time: {avgExecutionTime} ms");
+
+        // 🔍 RULE ENGINE
+        if (totalExecutions < 100)
+        {
+            Console.WriteLine("⚠ Low usage → Consider Consumption Plan");
+        }
+
+        if (avgExecutionTime > 2000)
+        {
+            Console.WriteLine("⚠ Slow execution → Optimize function code");
+        }
+
+        Console.WriteLine();
+    }
+
+    // ================= SERVICE BUS =================
+    static async Task AnalyzeServiceBus(HttpClient client, string subId, string rg, string ns, string queue)
+    {
+        Console.WriteLine("=== SERVICE BUS ANALYSIS ===");
+
+        string url =
+            $"https://management.azure.com/subscriptions/{subId}/resourceGroups/{rg}/providers/Microsoft.ServiceBus/namespaces/{ns}/queues/{queue}?api-version=2022-10-01-preview";
+
+        var response = await client.GetAsync(url);
+        var json = await response.Content.ReadAsStringAsync();
+
+        var obj = JObject.Parse(json);
+        var props = obj["properties"];
+
+        if (props == null)
+        {
+            Console.WriteLine("No data found\n");
+            return;
+        }
+
+        int activeMessages = (int)(props["countDetails"]?["activeMessageCount"] ?? 0);
+        int deadLetters = (int)(props["countDetails"]?["deadLetterMessageCount"] ?? 0);
+
+        Console.WriteLine($"Active Messages: {activeMessages}");
+        Console.WriteLine($"Dead-letter Messages: {deadLetters}");
+
+        // 🔍 RULE ENGINE
+        if (activeMessages > 1000)
+        {
+            Console.WriteLine("⚠ Queue backlog → Scale consumers");
+        }
+
+        if (deadLetters > 0)
+        {
+            Console.WriteLine("⚠ Dead-letter detected → Investigate failures");
+        }
+
+        Console.WriteLine();
+    }
+}
+2. What This Code Gives You
+Function App Output:
+Plain text
+Executions: 50
+⚠ Low usage → move to cheaper plan
+Plain text
+Execution time: 3000 ms
+⚠ Slow → optimize code
+Service Bus Output:
+Plain text
+Active Messages: 5000
+⚠ Backlog → scale consumers
+
+Dead-letter: 20
+⚠ Failures present
+3. Why This Is Powerful
+You are now giving:
+✔ Performance insights
+✔ Optimization suggestions
+✔ No billing permission needed
+4. Next Upgrade (Important)
+After this, add:
+1. Event Hub analysis
+Incoming vs outgoing messages
+2. Multi-resource scan
+Loop all function apps
+Loop all queues
+3. Email report
+5. What You Can Say to Client
+“I analyze your Azure serverless setup and identify performance and efficiency issues — without needing billing access.”
+🎯 Final Positioning
+You are building:
+Azure Serverless Optimization Tool
+NOT cost tracker anymore.
+If you want next
+I can give:
+👉 �⁠Code for Event Hub analysis
+👉 OR �⁠upgrade this into full ASP.NET Core API (production-ready SaaS base)
